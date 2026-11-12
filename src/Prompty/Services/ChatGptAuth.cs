@@ -134,15 +134,28 @@ public static class ChatGptAuth
             else clientId = savedClientId;
             CredentialStore.Set(ClientKey, clientId);
 
-            var tokens = await PostTokenAsync(new()
+            JsonObject tokens;
+            try
             {
-                ["grant_type"] = "authorization_code",
-                ["client_id"] = clientId,
-                ["code"] = code,
-                ["code_verifier"] = verifier,
-                ["redirect_uri"] = redirectUri,
-                ["resource"] = Resource,
-            }, ct);
+                tokens = await PostTokenAsync(new()
+                {
+                    ["grant_type"] = "authorization_code",
+                    ["client_id"] = clientId,
+                    ["code"] = code,
+                    ["code_verifier"] = verifier,
+                    ["redirect_uri"] = redirectUri,
+                    ["resource"] = Resource,
+                }, ct);
+            }
+            catch (ChatGptAuthException ex) when (ex.SignInAgain)
+            {
+                // OpenAI answers a rejected code with a bare invalid_grant and no reason. The docs say to discard
+                // the code and start over; plan usage also requires a ChatGPT Plus or Pro subscription.
+                throw new ChatGptAuthException(
+                    "OpenAI rejected this sign-in (invalid_grant) without saying why. Using your ChatGPT plan in other apps " +
+                    "requires ChatGPT Plus or Pro; Free accounts can't use it. If you have Plus or Pro, click Continue with ChatGPT " +
+                    "to try again. Otherwise pick another provider: Ollama (free, local), OpenRouter, or an API key.");
+            }
 
             var idToken = tokens["id_token"]?.GetValue<string>() ?? throw new ChatGptAuthException("ChatGPT returned no ID token.");
             var claims = await ValidateIdTokenAsync(idToken, clientId, nonce, ct);

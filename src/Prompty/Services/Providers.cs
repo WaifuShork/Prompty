@@ -47,7 +47,7 @@ public static class Providers
             AuthStyle.AnthropicKey),
         new("chatgpt", "ChatGPT plan (Sign in with ChatGPT)", ApiKind.OpenAiResponses, "https://api.openai.com/v1", true,
             "", "", Auth: AuthStyle.ChatGptAccount, SupportsSignIn: true,
-            Note: "Uses your ChatGPT Plus or Pro plan instead of API billing (OpenAI's official Sign in with ChatGPT). " +
+            Note: "Requires ChatGPT Plus or Pro (Free accounts aren't eligible). Uses your plan instead of API billing, through OpenAI's official Sign in with ChatGPT. " +
                   "On Plus, the 5-hour usage limit is shared with ChatGPT and your other apps."),
         new("openai", "OpenAI (API key)", ApiKind.OpenAi, "https://api.openai.com/v1", true,
             "gpt-5-mini", "gpt-5", "https://platform.openai.com/api-keys", ["OPENAI_API_KEY"]),
