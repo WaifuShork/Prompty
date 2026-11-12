@@ -110,6 +110,13 @@ public partial class MainWindow : Window
         Editor.TextArea.Caret.CaretBrush = Brushes.White;
         Editor.TextArea.TextView.LinkTextForegroundBrush = Brushes.LightSkyBlue;
 
+        // Images: "[Image #N]" tokens render as thumbnails; paste or drop images to insert them at that spot.
+        Editor.TextArea.TextView.ElementGenerators.Add(new ImageTokenGenerator(n => _draft.ImagePath(n)));
+        Editor.TextArea.PreviewKeyDown += EditorImagePaste_PreviewKeyDown;
+        Editor.TextArea.AllowDrop = true;
+        Editor.TextArea.PreviewDragOver += EditorImage_PreviewDragOver;
+        Editor.TextArea.PreviewDrop += EditorImage_PreviewDrop;
+
         // Drafts load per session once the session list is read. Before per-session drafts existed there
         // was a single draft.md; it moves to the first session opened.
         if (!Directory.Exists(DraftState.Dir) && File.Exists(AppSettings.DraftPath))
@@ -1014,6 +1021,7 @@ public partial class MainWindow : Window
         var doc = new TextDocument(text);
         doc.UndoStack.ClearAll();
         var state = new DraftState { Key = key, Doc = doc, GeneratorText = request, Dirty = migrated };
+        state.LoadImages();
         // Edits can land while the draft isn't shown (a generation still streaming into it).
         doc.TextChanged += (_, _) =>
         {
@@ -1243,12 +1251,12 @@ public partial class MainWindow : Window
         SendButton.IsEnabled = false;
         try
         {
-            SaveHistory(text);
+            SaveHistory(ExpandImageTokens(text));
 
             // 1. Claude is blocked in wait_for_prompt: hand it over via MCP (typing too would deliver it twice).
             if (_bridge.WaitingCount > 0)
             {
-                _bridge.Submit(text);
+                _bridge.Submit(ExpandImageTokens(text)); // MCP carries text only: images become file paths Claude can Read
                 _vm.Activity = "Delivered to Claude via wait_for_prompt ✓";
                 ClearAfterSend();
                 return;
@@ -1265,8 +1273,21 @@ public partial class MainWindow : Window
                     await RefreshContextAsync();
                     return;
                 }
-                await Task.Run(() => ConsoleInjector.SendPrompt(pid, text));
-                _bridge.Submit(text); // keeps /mcp__prompty__send and get_draft consistent
+                var parts = PromptParts(text);
+                if (parts.Any(p => p.ImagePath != null))
+                {
+                    _vm.Activity = "Sending prompt and images…";
+                    var saved = SnapshotClipboard();
+                    try
+                    {
+                        // Each image goes on the clipboard and is pasted with Alt+V, so Claude Code attaches it
+                        // as an [Image #N] chip at exactly that point in the text.
+                        await Task.Run(() => ConsoleInjector.SendPrompt(pid, parts, path => Dispatcher.Invoke(() => PutImageOnClipboard(path))));
+                    }
+                    finally { RestoreClipboard(saved); }
+                }
+                else await Task.Run(() => ConsoleInjector.SendPrompt(pid, text));
+                _bridge.Submit(ExpandImageTokens(text)); // keeps /mcp__prompty__send and get_draft consistent
                 _vm.Activity = $"Sent to “{target.Title}” (pid {pid}) ✓";
                 CenterTabs.SelectedItem = OutputTab;
                 ClearAfterSend();
@@ -1274,8 +1295,8 @@ public partial class MainWindow : Window
             }
 
             // 3. No live target: stage for /mcp__prompty__send and copy.
-            _bridge.Submit(text);
-            try { Clipboard.SetText(text); } catch { /* clipboard busy */ }
+            _bridge.Submit(ExpandImageTokens(text));
+            try { Clipboard.SetText(ExpandImageTokens(text)); } catch { /* clipboard busy */ }
             _vm.Activity = "No running session selected — staged for /mcp__prompty__send and copied to clipboard";
         }
         catch (Exception ex)
@@ -1412,6 +1433,118 @@ public partial class MainWindow : Window
     void SaveDraft()
     {
         foreach (var d in _drafts.Values.Where(d => d.Dirty)) d.Save();
+    }
+
+    // ───────────────────────────── images in the prompt ─────────────────────────────
+
+    void EditorImagePaste_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var mods = Keyboard.Modifiers;
+        var paste = (e.Key == Key.V && mods == ModifierKeys.Control)
+                    || (e.Key == Key.Insert && mods == ModifierKeys.Shift)
+                    || (e.SystemKey == Key.V && mods == ModifierKeys.Alt); // Claude Code's image-paste key on Windows
+        if (!paste || Editor.IsReadOnly) return;
+        IDataObject? data;
+        try { data = Clipboard.GetDataObject(); } catch { return; }
+        if (data == null || !PromptImages.HasImage(data)) return; // plain text: let the editor paste it
+        e.Handled = true;
+        InsertImages(PromptImages.SaveFrom(data), Editor.CaretOffset);
+    }
+
+    void EditorImage_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        if (!PromptImages.HasImage(e.Data)) return;
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    void EditorImage_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (!PromptImages.HasImage(e.Data) || Editor.IsReadOnly) return;
+        e.Handled = true;
+        var pos = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+        var offset = pos is { } p ? Editor.Document.GetOffset(p.Location) : Editor.CaretOffset;
+        InsertImages(PromptImages.SaveFrom(e.Data), offset);
+        Editor.Focus();
+    }
+
+    void InsertImage_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Insert image",
+            Filter = "Images (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
+            Multiselect = true,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        var data = new DataObject(DataFormats.FileDrop, dlg.FileNames);
+        InsertImages(PromptImages.SaveFrom(data), Editor.CaretOffset);
+        Editor.Focus();
+    }
+
+    /// <summary>Inserts "[Image #N]" tokens at <paramref name="offset"/> (replacing a selection there), one per image.</summary>
+    void InsertImages(List<string> files, int offset)
+    {
+        if (files.Count == 0) { _vm.Activity = "Nothing to insert: the clipboard or drop has no image"; return; }
+        var doc = Editor.Document;
+        if (Editor.SelectionLength > 0 && Editor.SelectionStart <= offset && offset <= Editor.SelectionStart + Editor.SelectionLength)
+        {
+            offset = Editor.SelectionStart;
+            doc.Remove(Editor.SelectionStart, Editor.SelectionLength);
+        }
+        var tokens = string.Join(" ", files.Select(f => PromptImages.Token(_draft.AddImage(f))));
+        // Keep tokens separated from neighbouring words.
+        if (offset > 0 && !char.IsWhiteSpace(doc.GetCharAt(offset - 1))) tokens = " " + tokens;
+        if (offset < doc.TextLength && !char.IsWhiteSpace(doc.GetCharAt(offset))) tokens += " ";
+        doc.Insert(offset, tokens);
+        Editor.CaretOffset = offset + tokens.Length;
+        _vm.Activity = files.Count == 1 ? "Image added; it's sent to Claude as an attachment at this spot"
+                                        : $"{files.Count} images added; they're sent to Claude as attachments at this spot";
+    }
+
+    /// <summary>Splits the prompt at its image tokens into text and image parts, in order.</summary>
+    List<PromptPart> PromptParts(string text)
+    {
+        var parts = new List<PromptPart>();
+        var at = 0;
+        foreach (System.Text.RegularExpressions.Match m in PromptImages.TokenRegex().Matches(text))
+        {
+            var path = _draft.ImagePath(int.Parse(m.Groups[1].Value));
+            if (path == null || !File.Exists(path)) continue; // unknown/missing image: leave the token as text
+            parts.Add(PromptPart.FromText(text[at..m.Index]));
+            parts.Add(PromptPart.FromImage(path));
+            at = m.Index + m.Length;
+        }
+        parts.Add(PromptPart.FromText(text[at..]));
+        return parts;
+    }
+
+    /// <summary>For text-only routes (MCP, clipboard, history): name each image's file so Claude can open it with Read.</summary>
+    string ExpandImageTokens(string text) =>
+        PromptImages.TokenRegex().Replace(text, m =>
+            _draft.ImagePath(int.Parse(m.Groups[1].Value)) is { } path ? $"[Image #{m.Groups[1].Value}: {path}]" : m.Value);
+
+    static void PutImageOnClipboard(string path)
+    {
+        if (PromptImages.Load(path, 0) is { } img) Clipboard.SetImage(img);
+    }
+
+    static DataObject? SnapshotClipboard()
+    {
+        try
+        {
+            if (Clipboard.GetDataObject() is not { } current) return null;
+            var copy = new DataObject();
+            foreach (var f in current.GetFormats(false))
+                try { if (current.GetData(f) is { } d) copy.SetData(f, d); } catch { /* some formats can't be copied */ }
+            return copy.GetFormats().Length > 0 ? copy : null;
+        }
+        catch { return null; }
+    }
+
+    static void RestoreClipboard(DataObject? saved)
+    {
+        try { if (saved != null) Clipboard.SetDataObject(saved, true); else Clipboard.Clear(); } catch { /* clipboard busy */ }
     }
 
     static void SaveHistory(string text)

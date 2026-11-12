@@ -90,6 +90,7 @@ you own, such as `%LOCALAPPDATA%\Programs\Prompty`, rather than `Program Files`.
 | `%APPDATA%\Prompty\credentials.dat` | API keys, encrypted for your Windows account (DPAPI) |
 | `%APPDATA%\Prompty\drafts\` | One draft per Claude session (`<sessionId>.md`, `.request.txt`) |
 | `%APPDATA%\Prompty\history\` | Every prompt you've sent |
+| `%APPDATA%\Prompty\images\` | Images you've pasted or dropped into prompts |
 
 To uninstall, delete `Prompty.exe` and the `%APPDATA%\Prompty` folder, and run `claude mcp remove prompty --scope user`.
 
@@ -107,6 +108,7 @@ To uninstall, delete `Prompty.exe` and the `%APPDATA%\Prompty` folder, and run `
 | Rewrite the selection (or the section at the cursor) | Ctrl+R, or the Ask box with an instruction |
 | Suggest the next sentence | Ctrl+Space |
 | Expand or collapse tool output in the Claude pane | Click the line or the margin marker, Enter, Ctrl+O, or Expand all / Collapse all |
+| Insert an image at the cursor | Paste it (Ctrl+V, Shift+Insert or Alt+V), drag image files in, or click **🖼 Image…** |
 | Send to Claude | Ctrl+Enter |
 
 Every Claude Code session has its own draft, undo history, GENERATE request and suggestion cards.
@@ -214,7 +216,7 @@ Major versions are never bumped automatically. Commits marked as breaking are re
 | **Analysis** | The draft is split into `## Markdown headings` or line-level `<xml_tags>`. The model returns up to 4 grounded suggestions (fill, rewrite or add), each tied to a section. Suggestions stream into editable cards; **Apply** replaces just that section's body, and Ctrl+Z undoes it. |
 | **Prompt generator** | Expands a short request into Goal / Context / Requirements / Relevant files / Constraints / Done when. It uses the conversation, the project's `CLAUDE.md`/`README.md` and a shallow file tree. The result streams into the editor as one undo step. |
 | **Claude output** | The middle pane shows the selected session laid out like the Claude Code terminal:<br>• Each tool call is a header (`● Update(file)`) plus a summary line (`⎿ Added 3 lines, removed 1 line`).<br>• Diffs (with line numbers) and full output are collapsed underneath.<br>• A status line shows what Claude is doing, for how long, and the output tokens.<br>• Above it, a task list shows the shells, monitors, agents and workflows Claude has started: running ones with a live timer, and finished ones with done / failed / stopped and the exit code. Click a row to see the command and its output, which streams live for running shells (the last ~48K characters are kept). The list is hidden when nothing is running.<br>• The transcript is read incrementally, so the view holds still. |
-| **Send to Claude** | Types the prompt into the selected *running* session's console input, as a bracketed paste for multi-line text, then presses Enter.<br>• Running sessions come from Claude Code's registry (`~/.claude/sessions/<pid>.json`).<br>• The PID is double-checked against the process start time before typing.<br>• There's no focus change and no global keystrokes.<br>• Falls back to MCP (`wait_for_prompt`, `/mcp__prompty__send`) and the clipboard. |
+| **Send to Claude** | Types the prompt into the selected *running* session's console input, as a bracketed paste for multi-line text, then presses Enter.<br>• Running sessions come from Claude Code's registry (`~/.claude/sessions/<pid>.json`).<br>• The PID is double-checked against the process start time before typing.<br>• There's no focus change and no global keystrokes.<br>• **Images:** each `[Image #N]` in the prompt is sent as a real Claude Code image attachment at that exact spot. Prompty puts the image on the clipboard and presses Claude Code's image-paste key (Alt+V), then restores your clipboard. Each image adds about 2 s to sending. Over MCP or the clipboard fallback, images become file paths that Claude opens with its Read tool.<br>• Falls back to MCP (`wait_for_prompt`, `/mcp__prompty__send`) and the clipboard. |
 | **MCP server** | Runs inside the app on `127.0.0.1:47821/mcp`. |
 
 ### MCP surface

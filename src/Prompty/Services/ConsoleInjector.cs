@@ -13,24 +13,21 @@ public static class ConsoleInjector
 {
     static readonly object Gate = new(); // AttachConsole is process-wide
 
-    public static void SendPrompt(int pid, string text, bool submit = true)
+    public static void SendPrompt(int pid, string text, bool submit = true) =>
+        SendPrompt(pid, [PromptPart.FromText(text)], null, submit);
+
+    /// <summary>
+    /// Types text and images in order. For each image, <paramref name="putImageOnClipboard"/> places it on the
+    /// clipboard, then Alt+V (Claude Code's image-paste key on Windows) makes Claude Code insert it as an
+    /// "[Image #N]" chip at that point, exactly as when the user pastes a screenshot.
+    /// </summary>
+    public static void SendPrompt(int pid, IReadOnlyList<PromptPart> parts, Action<string>? putImageOnClipboard, bool submit = true)
     {
-        var body = text.Replace("\r\n", "\n").Trim();
-        var records = new List<INPUT_RECORD>();
-        if (body.Contains('\n'))
-        {
-            // Type the first character plainly so the input box is non-empty: on a fresh session the
-            // empty box shows a "Try …" hint that a leading escape sequence can partially accept.
-            AddText(records, body[..1]);
-            // Bracketed paste keeps newlines as newlines instead of submitting each line.
-            AddText(records, "\x1b[200~");
-            AddText(records, body[1..]);
-            AddText(records, "\x1b[201~");
-        }
-        else
-        {
-            AddText(records, body);
-        }
+        // Normalize: CRLF to LF, trim the ends of the whole prompt, drop empty text parts.
+        var list = parts.Select(p => p.ImagePath != null ? p : PromptPart.FromText(p.Text!.Replace("\r\n", "\n"))).ToList();
+        if (list.Count > 0 && list[0].Text is { } first) list[0] = PromptPart.FromText(first.TrimStart());
+        if (list.Count > 0 && list[^1].Text is { } last) list[^1] = PromptPart.FromText(last.TrimEnd());
+        list = list.Where(p => p.ImagePath != null || p.Text!.Length > 0).ToList();
 
         lock (Gate)
         {
@@ -46,7 +43,36 @@ public static class ConsoleInjector
                     IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
                 if (input.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Couldn't open the console input buffer");
 
-                Write(input, records);
+                var typedAnything = false;
+                foreach (var part in list)
+                {
+                    if (part.ImagePath is { } image)
+                    {
+                        if (putImageOnClipboard == null) continue;
+                        putImageOnClipboard(image);
+                        Thread.Sleep(150);
+                        Write(input, [AltKey('v', 0x56, true), AltKey('v', 0x56, false)]);
+                        // Claude Code reads the clipboard asynchronously; wait so following text lands after the chip.
+                        Thread.Sleep(ImagePasteDelayMs);
+                        typedAnything = true;
+                        continue;
+                    }
+                    var records = new List<INPUT_RECORD>();
+                    var body = part.Text!;
+                    if (body.Contains('\n'))
+                    {
+                        // On a fresh session the empty box shows a "Try ..." hint that a leading escape sequence can
+                        // partially accept, so type the very first character plainly.
+                        if (!typedAnything) { AddText(records, body[..1]); body = body[1..]; }
+                        // Bracketed paste keeps newlines as newlines instead of submitting each line.
+                        AddText(records, "\x1b[200~");
+                        AddText(records, body);
+                        AddText(records, "\x1b[201~");
+                    }
+                    else AddText(records, body);
+                    Write(input, records);
+                    typedAnything = true;
+                }
                 if (submit)
                 {
                     Thread.Sleep(250); // let the TUI finish ingesting the paste before Enter
@@ -82,6 +108,20 @@ public static class ConsoleInjector
             if (records.Count > chunk) Thread.Sleep(5);
         }
     }
+
+    /// <summary>How long Claude Code gets to fetch a pasted image from the clipboard (it shells out to read it).</summary>
+    public static int ImagePasteDelayMs { get; set; } = 1800;
+
+    static INPUT_RECORD AltKey(char ch, ushort vk, bool down) => new()
+    {
+        EventType = KEY_EVENT,
+        KeyEvent = new KEY_EVENT_RECORD
+        {
+            bKeyDown = down ? 1 : 0, wRepeatCount = 1, wVirtualKeyCode = vk, UnicodeChar = ch, dwControlKeyState = LEFT_ALT_PRESSED,
+        },
+    };
+
+    const uint LEFT_ALT_PRESSED = 0x0002;
 
     static INPUT_RECORD Key(char ch, ushort vk, bool down) => new()
     {
@@ -119,4 +159,11 @@ public static class ConsoleInjector
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern bool WriteConsoleInputW(SafeFileHandle input, INPUT_RECORD[] records, uint length, out uint written);
+}
+
+/// <summary>A piece of a prompt: text, or an image file to paste as an attachment.</summary>
+public sealed record PromptPart(string? Text, string? ImagePath)
+{
+    public static PromptPart FromText(string text) => new(text, null);
+    public static PromptPart FromImage(string path) => new(null, path);
 }

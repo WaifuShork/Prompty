@@ -307,6 +307,9 @@
                         </Grid.RowDefinitions>
                         <Border Padding="12,8" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1">
                             <DockPanel>
+                                <Button DockPanel.Dock="Right" x:Name="InsertImageButton" Content="🖼 Image…" Click="InsertImage_Click"
+                                        Style="{StaticResource SmallButton}" Margin="0,0,10,0" VerticalAlignment="Center"
+                                        ToolTip="Insert an image at the cursor. You can also paste one (Ctrl+V or Alt+V) or drag image files in." />
                                 <Button DockPanel.Dock="Right" x:Name="SendButton" Content="Send to Claude ➤" Click="Send_Click"
                                         Style="{StaticResource AccentButtonStyle}" ToolTip="Type this prompt into the selected Claude Code session (Ctrl+Enter)" />
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding Counts}" Foreground="{StaticResource MutedText}" FontSize="12"
