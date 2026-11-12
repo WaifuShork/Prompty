@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="ClaudeOutput" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="You" foreground="#E8B48C" fontWeight="bold" />
+  <Color name="Claude" foreground="#F4F4F5" fontWeight="bold" />
+  <Color name="Tool" foreground="#7FB4E0" />
+  <Color name="Result" foreground="#6B7080" />
+  <Color name="Code" foreground="#A7D49B" />
+  <Color name="Heading" foreground="#E8B48C" fontWeight="bold" />
+  <Color name="Emphasis" foreground="#F0F0F0" fontWeight="bold" />
+
+  <RuleSet>
+    <Span color="Code" multiline="true">
+      <Begin>^\s*```</Begin>
+      <End>^\s*```</End>
+    </Span>
+    <Rule color="You">^❯ You.*$</Rule>
+    <Rule color="Claude">^● Claude.*$</Rule>
+    <Rule color="Tool">^\s{2}● .*$</Rule>
+    <Rule color="Result">^\s+⎿ .*$</Rule>
+    <Rule color="Heading">^\#{1,6}\s.*$</Rule>
+    <Rule color="Code">`[^`\n]+`</Rule>
+    <Rule color="Emphasis">\*\*[^*\n]+\*\*</Rule>
+  </RuleSet>
+</SyntaxDefinition>

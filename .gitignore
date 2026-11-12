@@ -1,0 +1,67 @@
+# ── Build output ──────────────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]64/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+publish/
+*.nupkg
+*.snupkg
+
+# ── .NET / MSBuild ────────────────────────────────────────────
+*_wpftmp.csproj
+*.binlog
+project.lock.json
+project.fragment.lock.json
+*.nuget.props
+*.nuget.targets
+.dotnet/
+
+# ── Test results & coverage ───────────────────────────────────
+[Tt]est[Rr]esult*/
+*.trx
+coverage*.json
+coverage*.xml
+*.coverage
+*.coveragexml
+
+# ── IDEs & editors ────────────────────────────────────────────
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+.idea/
+*.sln.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*~
+
+# ── OS ────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ── Local settings & secrets ──────────────────────────────────
+# Prompty keeps its settings, drafts and encrypted keys in %APPDATA%\Prompty, never in the repo.
+# These guard against copies dropped here while debugging.
+credentials.dat
+.env
+.env.*
+*.pfx
+*.snk
+
+# Claude Code per-machine settings (shared project settings stay tracked)
+.claude/settings.local.json

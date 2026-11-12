@@ -1,0 +1,348 @@
+<Window x:Class="Prompty.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
+        xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:local="clr-namespace:Prompty"
+        xmlns:svc="clr-namespace:Prompty.Services"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Prompty" Width="1500" Height="940" MinWidth="1040" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PanelBrush}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Padding="10,8" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button x:Name="NewButton" Content="New ▾" Click="New_Click" ToolTip="New prompt from a template (Ctrl+N)" />
+                    <Button Content="Open" Margin="6,0,0,0" Click="Open_Click" ToolTip="Ctrl+O" />
+                    <Button Content="Save" Margin="6,0,0,0" Click="Save_Click" ToolTip="Ctrl+S" />
+                    <Rectangle Width="1" Fill="{StaticResource BorderBrushSubtle}" Margin="12,4" />
+                    <Button Content="⟳ Analyze" Click="Analyze_Click" ToolTip="Ask the local model for suggestions (F5)" />
+                    <Button Content="✨ Fill empty" Margin="6,0,0,0" Click="FillEmpty_Click" ToolTip="Autofill every empty section from the conversation" />
+                    <Button Content="{}{{ }} Placeholders" Margin="6,0,0,0" Click="Placeholders_Click" ToolTip="Fill {{placeholders}} from the conversation" />
+                    <Button Content="Rewrite selection" Margin="6,0,0,0" Click="RewriteSelection_Click" ToolTip="Ctrl+R" />
+                    <Button Content="Continue" Margin="6,0,0,0" Click="Continue_Click" ToolTip="Suggest the next sentence at the cursor (Ctrl+Space)" />
+                    <CheckBox Content="Auto-analyze" Margin="14,0,0,0" IsChecked="{Binding AutoAnalyze}" Click="AutoAnalyze_Click"
+                              ToolTip="Re-analyze a few seconds after you stop typing" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,6,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource Bad}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ModelOk}" Value="True">
+                                        <Setter Property="Fill" Value="{StaticResource Good}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <ComboBox x:Name="ModelBox" Width="210" IsEditable="True" ItemsSource="{Binding Models}"
+                              Text="{Binding ModelName, UpdateSourceTrigger=LostFocus}"
+                              SelectionChanged="ModelBox_SelectionChanged" LostFocus="ModelBox_LostFocus"
+                              ToolTip="Local model used for analysis" />
+                    <Button Content="⚙" Margin="6,0,0,0" Click="Settings_Click" ToolTip="Settings &amp; Claude connection" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="220" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="420" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="370" MinWidth="260" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: sessions + outline -->
+            <Grid Grid.Column="0" Margin="12,12,8,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" MaxHeight="300" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0">
+                    <Button DockPanel.Dock="Right" Content="↻" Style="{StaticResource SmallButton}" Click="RefreshContext_Click" ToolTip="Reload sessions" />
+                    <TextBlock Text="CLAUDE CODE SESSIONS" Style="{StaticResource PanelHeader}" VerticalAlignment="Center" />
+                </DockPanel>
+                <ListBox Grid.Row="1" x:Name="SessionList" Margin="0,4,0,0" ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}"
+                         SelectionChanged="SessionList_SelectionChanged" Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="Padding" Value="8,5" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding}" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type svc:SessionInfo}">
+                            <DockPanel>
+                                <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,5,8,0" VerticalAlignment="Top">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#555A66" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLive}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource Good}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                                    <Setter Property="Fill" Value="{StaticResource AccentText}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedText}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <CheckBox Grid.Row="2" Margin="0,6,0,8" Content="Follow most recently active" IsChecked="{Binding FollowLatest}" Click="FollowLatest_Click" FontSize="12"
+                          ToolTip="Automatically select the Claude Code session that was active most recently" />
+
+                <Border Grid.Row="3" Background="{StaticResource CardBrush}" CornerRadius="6" Padding="10,8" Margin="0,0,0,8"
+                        Visibility="{Binding HasSharedContext, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SmallButton}" Click="ClearShared_Click" ToolTip="Forget shared summary" />
+                            <TextBlock Text="SHARED BY CLAUDE (MCP)" Style="{StaticResource PanelHeader}" Foreground="{StaticResource AccentText}" />
+                        </DockPanel>
+                        <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding SharedContext}" TextWrapping="Wrap" FontSize="12" />
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Grid.Row="4" Text="PROMPT OUTLINE" Style="{StaticResource PanelHeader}" Margin="0,6,0,6" />
+                <ListBox Grid.Row="5" x:Name="SectionList" ItemsSource="{Binding Sections}" Background="Transparent"
+                         SelectionChanged="SectionList_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="Padding" Value="8,3" />
+                            <Setter Property="MinHeight" Value="30" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:SectionVm}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="{Binding ActionLabel}" Style="{StaticResource SmallButton}" Click="SectionAction_Click" />
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Detail}" Foreground="{StaticResource MutedText}" FontSize="11"
+                                           VerticalAlignment="Center" Margin="6,0,8,0" />
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrushSubtle}" />
+
+            <!-- Center: Claude output (big) + docked prompt editor -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" MinHeight="160" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="360" MinHeight="190" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="#3A2E22" BorderBrush="{StaticResource AccentText}" BorderThickness="0,0,0,1" Padding="14,10"
+                        Visibility="{Binding ClaudeWaiting, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Claude is waiting for your prompt (wait_for_prompt)" FontWeight="SemiBold" Foreground="{StaticResource AccentText}" />
+                        <TextBlock Text="{Binding WaitingText}" TextWrapping="Wrap" FontSize="12" Margin="0,2,12,0" />
+                    </StackPanel>
+                </Border>
+
+                <TabControl Grid.Row="1" x:Name="CenterTabs" Margin="8,6,8,0" Background="Transparent" ui:TabControlHelper.IsAddTabButtonVisible="False">
+                    <TabItem x:Name="OutputTab" Header="Claude output" ui:TabItemHelper.IsClosable="False">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <!-- Like Claude Code's status line: "✻ Sketching… (12s · ↓ 1.2k tokens)" -->
+                            <Border Grid.Row="2" x:Name="ActivityBar" Visibility="Collapsed" Background="{StaticResource EditorBrush}"
+                                    BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0" Padding="16,5,16,6">
+                                <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="13" TextTrimming="CharacterEllipsis">
+                                    <Run x:Name="ActivityGlyph" /><Run x:Name="ActivityVerb" /><Run x:Name="ActivityStats" Foreground="{StaticResource MutedText}" />
+                                </TextBlock>
+                            </Border>
+                            <DockPanel Margin="4,6,4,6">
+                                <CheckBox DockPanel.Dock="Right" Content="Auto-scroll" IsChecked="{Binding AutoScroll}" FontSize="12" Margin="10,0,0,0" />
+                                <Button DockPanel.Dock="Right" Content="Collapse all" Style="{StaticResource SmallButton}" Margin="6,0,0,0" Click="CollapseAll_Click"
+                                        ToolTip="Collapse every tool output and diff" />
+                                <Button DockPanel.Dock="Right" Content="Expand all" Style="{StaticResource SmallButton}" Click="ExpandAll_Click"
+                                        ToolTip="Expand every tool output and diff (Ctrl+O in this pane toggles)" />
+                                <TextBlock Text="{Binding OutputHeader}" Foreground="{StaticResource MutedText}" FontSize="12"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                            <ae:TextEditor Grid.Row="1" x:Name="Output" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="13"
+                                           WordWrap="True" ShowLineNumbers="False" Padding="16,10"
+                                           Background="{StaticResource EditorBrush}" Foreground="#D4D4D8"
+                                           HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" />
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Model context" ui:TabItemHelper.IsClosable="False">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Margin="4,6,4,6" Foreground="{StaticResource MutedText}" FontSize="12" TextWrapping="Wrap"
+                                       Text="What the local model sees: a trimmed digest of the selected session (plus anything Claude shared over MCP)." />
+                            <TextBox Grid.Row="1" Text="{Binding Digest, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                     Background="{StaticResource EditorBrush}" Foreground="{StaticResource MutedText}" BorderThickness="0"
+                                     VerticalContentAlignment="Top" Padding="12,8" />
+                        </Grid>
+                    </TabItem>
+                </TabControl>
+
+                <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch" Margin="0,6,0,0"
+                              Background="{StaticResource BorderBrushSubtle}" ResizeDirection="Rows" />
+
+                <DockPanel Grid.Row="3">
+                <!-- Prompt generator: a short request in, a complete prompt out (into the editor below) -->
+                <Border DockPanel.Dock="Top" Margin="8,8,8,0" Background="{StaticResource EditorBrush}" CornerRadius="8"
+                        BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1" Padding="12,4,5,4">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" x:Name="GenerateButton" Content="➜" Click="Generate_Click" Width="34" Height="30"
+                                Padding="0" FontSize="15" VerticalAlignment="Bottom" Style="{StaticResource AccentButtonStyle}"
+                                ToolTip="Generate a complete prompt from this request into the editor below (Enter)" />
+                        <TextBlock DockPanel.Dock="Left" Text="GENERATE" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedText}"
+                                   VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBox x:Name="GeneratorInput" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="96" MinHeight="30"
+                                 VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent"
+                                 FontSize="13" Margin="0,0,6,0" PreviewKeyDown="GeneratorInput_PreviewKeyDown"
+                                 ui:ControlHelper.PlaceholderText="Describe what you want; the local model writes the full prompt below (Enter to generate, Shift+Enter for a new line)" />
+                    </DockPanel>
+                </Border>
+
+                <!-- Docked prompt editor -->
+                <Border Margin="8,8,8,8" Background="{StaticResource EditorBrush}" CornerRadius="8"
+                        BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border Padding="12,8" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,0,0,1">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" x:Name="SendButton" Content="Send to Claude ➤" Click="Send_Click"
+                                        Style="{StaticResource AccentButtonStyle}" ToolTip="Type this prompt into the selected Claude Code session (Ctrl+Enter)" />
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Counts}" Foreground="{StaticResource MutedText}" FontSize="12"
+                                           VerticalAlignment="Center" Margin="0,0,12,0" />
+                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                    <Run Text="PROMPT" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedText}" />
+                                    <Run Text="  →  " Foreground="{StaticResource MutedText}" />
+                                    <Run Text="{Binding TargetLabel, Mode=OneWay}" Foreground="{StaticResource AccentText}" />
+                                </TextBlock>
+                            </DockPanel>
+                        </Border>
+                        <ae:TextEditor Grid.Row="1" x:Name="Editor" FontFamily="Cascadia Mono, Consolas" FontSize="14"
+                                       WordWrap="True" ShowLineNumbers="False" Padding="14,10"
+                                       Background="Transparent" Foreground="#E4E4E7"
+                                       HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" />
+                    </Grid>
+                </Border>
+                </DockPanel>
+            </Grid>
+
+            <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrushSubtle}" />
+
+            <!-- Right: suggestions -->
+            <Grid Grid.Column="4" Margin="10,12,12,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0">
+                    <Button DockPanel.Dock="Right" Content="Clear" Style="{StaticResource SmallButton}" Click="ClearSuggestions_Click" />
+                    <ui:ProgressRing DockPanel.Dock="Right" IsActive="{Binding IsBusy}" Width="16" Height="16" Margin="0,0,8,0" />
+                    <TextBlock Text="SUGGESTIONS" Style="{StaticResource PanelHeader}" VerticalAlignment="Center" />
+                </DockPanel>
+                <DockPanel Grid.Row="1" Margin="0,6,0,10">
+                    <Button DockPanel.Dock="Right" Content="Ask" Margin="6,0,0,0" Click="Ask_Click" />
+                    <TextBox x:Name="AskBox" Text="{Binding AskText, UpdateSourceTrigger=PropertyChanged}" KeyDown="AskBox_KeyDown"
+                             ui:ControlHelper.PlaceholderText="Instruction for selection / section at cursor…" />
+                </DockPanel>
+
+                <Grid Grid.Row="2">
+                    <TextBlock Visibility="{Binding NoSuggestions, Converter={StaticResource BoolToVis}}" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedText}" FontSize="12" Margin="2,4">
+                        Suggestions from your local model appear here.<LineBreak /><LineBreak />
+                        F5 analyze · Ctrl+R rewrite selection · Ctrl+Space continue · Ctrl+Enter send to Claude
+                    </TextBlock>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Suggestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:SuggestionVm}">
+                                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1"
+                                            CornerRadius="8" Padding="12" Margin="0,0,4,10" MouseEnter="Card_MouseEnter">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Badge}" Foreground="{StaticResource AccentText}" FontSize="11" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" Margin="0,2,0,0" />
+                                            <TextBlock Text="{Binding Reason}" Foreground="{StaticResource MutedText}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0"
+                                                       Visibility="{Binding HasReason, Converter={StaticResource BoolToVis}}" />
+                                            <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0" MaxHeight="280"
+                                                     TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                                     FontFamily="Cascadia Mono, Consolas" FontSize="12" Background="{StaticResource EditorBrush}"
+                                                     Visibility="{Binding ShowText, Converter={StaticResource BoolToVis}}"
+                                                     ToolTip="You can edit this before applying" />
+                                            <TextBlock Text="{Binding Error}" Foreground="{StaticResource Bad}" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0"
+                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                <Button Content="Apply" Style="{StaticResource AccentButtonStyle}" Click="Apply_Click"
+                                                        Visibility="{Binding CanApply, Converter={StaticResource BoolToVis}}" />
+                                                <Button Content="Stop" Style="{StaticResource SmallButton}" Click="Stop_Click"
+                                                        Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVis}}" />
+                                                <Button Content="Copy" Style="{StaticResource SmallButton}" Margin="6,0,0,0" Click="Copy_Click"
+                                                        Visibility="{Binding CanApply, Converter={StaticResource BoolToVis}}" />
+                                                <Button Content="Dismiss" Style="{StaticResource SmallButton}" Margin="6,0,0,0" Click="Dismiss_Click" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- Status bar -->
+        <Border Grid.Row="2" Padding="12,5" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock Text="{Binding FileTitle}" FontSize="12" Margin="0,0,16,0" />
+                <TextBlock Text="{Binding ModelStatus}" Foreground="{StaticResource MutedText}" FontSize="12" Margin="0,0,16,0" />
+                <TextBlock Text="{Binding McpStatus}" Foreground="{StaticResource MutedText}" FontSize="12" Margin="0,0,16,0" />
+                <TextBlock Text="{Binding Activity}" Foreground="{StaticResource AccentText}" FontSize="12" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,117 @@
+<Window x:Class="Prompty.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Prompty settings" Width="680" SizeToContent="Height" MaxHeight="980" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource PanelBrush}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20">
+        <TextBlock Text="MODEL PROVIDER" Style="{StaticResource PanelHeader}" />
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="150" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Provider" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ProviderBox" Margin="0,4" HorizontalAlignment="Stretch"
+                      DisplayMemberPath="Display" SelectionChanged="ProviderBox_SelectionChanged" MaxDropDownHeight="480" />
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ProviderNote" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{StaticResource MutedText}" Margin="0,0,0,4" />
+
+            <TextBlock Grid.Row="2" Text="Server URL" VerticalAlignment="Center" />
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="UrlBox" Margin="0,4" />
+
+            <!-- Cloud sign-in -->
+            <TextBlock Grid.Row="3" x:Name="KeyLabel" Text="API key" VerticalAlignment="Center" />
+            <DockPanel Grid.Row="3" Grid.Column="1" x:Name="KeyPanel" Margin="0,4">
+                <Button DockPanel.Dock="Right" x:Name="ForgetKeyButton" Content="Forget" Margin="6,0,0,0" Click="ForgetKey_Click"
+                        ToolTip="Delete the saved key for this provider" />
+                <Button DockPanel.Dock="Right" x:Name="GetKeyButton" Content="Get a key ↗" Margin="6,0,0,0" Click="GetKey_Click" />
+                <PasswordBox x:Name="KeyBox" ui:ControlHelper.PlaceholderText="Paste an API key (stored encrypted for your Windows account)" />
+            </DockPanel>
+            <StackPanel Grid.Row="4" Grid.Column="1" x:Name="SignInPanel" Orientation="Horizontal" Margin="0,2,0,4">
+                <Button x:Name="SignInButton" Content="Sign in with OpenRouter" Style="{StaticResource AccentButtonStyle}" Click="SignIn_Click"
+                        ToolTip="Opens your browser; approve Prompty and a key is created for you" />
+                <TextBlock Text="or paste a key above" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12" Foreground="{StaticResource MutedText}" />
+            </StackPanel>
+            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="KeyStatus" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4" />
+
+            <TextBlock Grid.Row="6" Text="Model" VerticalAlignment="Center" />
+            <DockPanel Grid.Row="6" Grid.Column="1" Margin="0,4">
+                <Button DockPanel.Dock="Right" x:Name="TestButton" Content="Test &amp; load models" Margin="6,0,0,0" Click="Test_Click"
+                        ToolTip="Check the connection and key, and list the models this provider offers" />
+                <ComboBox x:Name="ModelBox" IsEditable="True" HorizontalAlignment="Stretch" MaxDropDownHeight="400"
+                          ToolTip="Fast model for analysis, suggestions and rewrites" />
+            </DockPanel>
+            <TextBlock Grid.Row="7" Text="Generator model" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="7" Grid.Column="1" x:Name="GeneratorModelBox" IsEditable="True" Margin="0,4" HorizontalAlignment="Stretch"
+                      MaxDropDownHeight="400" ToolTip="Stronger model used by the GENERATE box to write whole prompts" />
+            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="TestResult" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4" />
+
+            <TextBlock Grid.Row="9" Grid.ColumnSpan="2" x:Name="PrivacyNote" TextWrapping="Wrap" FontSize="12"
+                       Foreground="#E0B070" Margin="0,4,0,0" />
+        </Grid>
+
+        <TextBlock Text="ANALYSIS" Style="{StaticResource PanelHeader}" />
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="150" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" x:Name="CtxLabel" Text="Context window" VerticalAlignment="Center" />
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="CtxBox" Margin="0,4" ToolTip="num_ctx sent to Ollama (tokens)" />
+            <TextBlock Grid.Row="1" Text="Conversation chars" VerticalAlignment="Center" />
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="CharsBox" Margin="0,4" ToolTip="How much of the Claude conversation to feed the model" />
+            <TextBlock Grid.Row="2" Text="Auto-analyze delay (ms)" VerticalAlignment="Center" />
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="DelayBox" Margin="0,4" />
+        </Grid>
+
+        <TextBlock Text="CLAUDE CONNECTION (MCP)" Style="{StaticResource PanelHeader}" />
+        <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="150" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="MCP port" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" x:Name="PortBox" Margin="0,4" />
+        </Grid>
+        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedText}" Margin="0,0,0,6">
+            Register Prompty with Claude Code once (user scope, works in every project):
+        </TextBlock>
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Copy" Margin="6,0,0,0" Click="CopyCommand_Click" />
+            <Button DockPanel.Dock="Right" Content="Register now" Margin="6,0,0,0" Click="Register_Click" />
+            <TextBox x:Name="CommandBox" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="12" />
+        </DockPanel>
+        <TextBlock x:Name="RegisterResult" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" />
+        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedText}" Margin="0,8,0,0">
+            Then in Claude Code: finish a prompt here, press Send, and run /mcp__prompty__send — or ask Claude to
+            "wait for my prompt in Prompty" and it will call the wait_for_prompt tool.
+        </TextBlock>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Cancel" IsCancel="True" Width="90" />
+            <Button Content="Save" IsDefault="True" Width="90" Margin="8,0,0,0" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
+        </StackPanel>
+    </StackPanel>
+    </ScrollViewer>
+</Window>

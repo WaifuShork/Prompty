@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="PromptMarkdown" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Heading" foreground="#E8B48C" fontWeight="bold" />
+  <Color name="Tag" foreground="#7FB4E0" />
+  <Color name="Placeholder" foreground="#1E1F24" background="#D9A27A" />
+  <Color name="Code" foreground="#A7D49B" />
+  <Color name="Emphasis" foreground="#F0F0F0" fontWeight="bold" />
+  <Color name="Bullet" foreground="#C78DD8" />
+  <Color name="Comment" foreground="#6B7080" fontStyle="italic" />
+
+  <RuleSet>
+    <Span color="Code" multiline="true">
+      <Begin>^\s*```</Begin>
+      <End>^\s*```</End>
+    </Span>
+    <Span color="Comment" multiline="true">
+      <Begin>&lt;!--</Begin>
+      <End>--&gt;</End>
+    </Span>
+    <Rule color="Heading">^\#{1,6}\s.*$</Rule>
+    <Rule color="Placeholder">\{\{[^{}]+\}\}</Rule>
+    <Rule color="Tag">&lt;/?[A-Za-z_][\w\-]*(\s[^&gt;]*)?&gt;</Rule>
+    <Rule color="Code">`[^`\n]+`</Rule>
+    <Rule color="Emphasis">\*\*[^*\n]+\*\*</Rule>
+    <Rule color="Bullet">^\s*([-*+]|\d+\.)\s</Rule>
+  </RuleSet>
+</SyntaxDefinition>

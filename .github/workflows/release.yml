@@ -1,0 +1,66 @@
+# Builds the single-file Prompty.exe on every push / PR. When a v* tag is pushed (made by release.ps1),
+# it also publishes a GitHub Release with the exe, zip and checksums, using that version's CHANGELOG section.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Check tag matches project version
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $proj = ([xml](Get-Content src/Prompty/Prompty.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ($tag -ne $proj) { throw "Tag v$tag does not match <Version>$proj</Version> in Prompty.csproj" }
+
+      - name: Build and publish single-file exe
+        shell: pwsh
+        run: ./build.ps1 -Smoke
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Prompty-win-x64
+          path: |
+            artifacts/publish/Prompty.exe*
+            artifacts/*.zip
+            artifacts/*.sha256
+
+      - name: Extract release notes from CHANGELOG.md
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?s)## \[$([regex]::Escape($version))\][^\n]*\n(?<notes>.*?)(?=\n## \[|\n\[[^\]]+\]: |\z)")
+          $notes = if ($m.Success) { $m.Groups['notes'].Value.Trim() } else { "Prompty $version" }
+          $notes += "`n`n**Install:** download ``Prompty.exe`` below and run it. No installer and no .NET needed. See the README for first-run setup."
+          Set-Content release-notes.md $notes -Encoding utf8
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Prompty ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            artifacts/publish/Prompty.exe
+            artifacts/publish/Prompty.exe.sha256
+            artifacts/*.zip
+            artifacts/Prompty-*.zip.sha256
