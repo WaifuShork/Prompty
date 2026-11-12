@@ -159,6 +159,7 @@ public partial class MainWindow : Window
         }
 
         StartWatchingTranscripts();
+        _ = CheckForUpdatesOnLaunchAsync();
         await RefreshContextAsync();
         await CheckModelAsync();
 
@@ -1313,6 +1314,27 @@ public partial class MainWindow : Window
             File.WriteAllText(Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss}.md"), text);
         }
         catch (IOException) { }
+    }
+
+    // ───────────────────────────── updates ─────────────────────────────
+
+    async Task CheckForUpdatesOnLaunchAsync()
+    {
+        if (UpdateService.JustUpdated) _vm.Activity = $"Updated to Prompty {UpdateService.CurrentVersionText}";
+        if (!_settings.CheckForUpdatesOnLaunch) return;
+        await Task.Delay(TimeSpan.FromSeconds(3)); // let the window settle first
+        try
+        {
+            var update = await UpdateService.CheckAsync();
+            if (update == null || !UpdateWindow.ShouldPrompt(update, _settings)) return;
+            if (OwnedWindows.Count > 0) return; // don't stack on top of an open dialog
+            new UpdateWindow(update, _settings) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            // Offline, rate-limited or anything else: never let the update check disturb startup. Retried next launch.
+            Debug.WriteLine($"Update check failed: {ex}");
+        }
     }
 
     async void Settings_Click(object sender, RoutedEventArgs e)

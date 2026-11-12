@@ -30,6 +30,13 @@ public sealed class AppSettings
 
     public int McpPort { get; set; } = 47821;
 
+    // ── updates ──
+    public bool CheckForUpdatesOnLaunch { get; set; } = true;
+    /// <summary>"Skip this version": no launch prompt for exactly this version.</summary>
+    public string? SkippedUpdateVersion { get; set; }
+    /// <summary>"Don't ask until next major": no launch prompts for releases below this major version.</summary>
+    public int MuteUpdatesUntilMajor { get; set; }
+
     public static string Dir { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Prompty");
 

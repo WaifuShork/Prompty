@@ -29,6 +29,12 @@ public partial class SettingsWindow : Window
         DelayBox.Text = settings.AutoAnalyzeDelayMs.ToString();
         PortBox.Text = settings.McpPort.ToString();
         CommandBox.Text = settings.ClaudeAddCommand;
+        VersionText.Text = $"Prompty {UpdateService.CurrentVersionText}";
+        CheckOnLaunchBox.IsChecked = settings.CheckForUpdatesOnLaunch;
+        if (settings.MuteUpdatesUntilMajor > UpdateService.CurrentVersion.Major || settings.SkippedUpdateVersion != null)
+            SetStatus(UpdateStatus, settings.MuteUpdatesUntilMajor > UpdateService.CurrentVersion.Major
+                ? $"Launch prompts are paused until version {settings.MuteUpdatesUntilMajor}.0. Checking here resets that."
+                : $"You skipped version {settings.SkippedUpdateVersion}. Checking here resets that.", null);
 
         _shown = _work.ProviderInfo;
         ProviderBox.SelectedItem = _shown; // fires SelectionChanged → ShowProvider
@@ -218,8 +224,35 @@ public partial class SettingsWindow : Window
         if (int.TryParse(CtxBox.Text, out var ctx) && ctx >= 2048) _settings.ContextTokens = ctx;
         if (int.TryParse(CharsBox.Text, out var chars) && chars >= 1000) _settings.ContextMaxChars = chars;
         if (int.TryParse(DelayBox.Text, out var delay) && delay >= 500) _settings.AutoAnalyzeDelayMs = delay;
+        _settings.CheckForUpdatesOnLaunch = CheckOnLaunchBox.IsChecked == true;
         if (int.TryParse(PortBox.Text, out var port) && port is > 1024 and < 65536) _settings.McpPort = port;
         DialogResult = true;
+    }
+
+    async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        SetStatus(UpdateStatus, "Checking GitHub…", null);
+        try
+        {
+            var update = await UpdateService.CheckAsync();
+            if (update == null)
+            {
+                SetStatus(UpdateStatus, $"✓ You're on the latest version ({UpdateService.CurrentVersionText}).", true);
+                return;
+            }
+            // A manual check always offers the update and clears earlier "skip" / "don't ask" choices.
+            _settings.SkippedUpdateVersion = null;
+            _settings.MuteUpdatesUntilMajor = 0;
+            _settings.Save();
+            SetStatus(UpdateStatus, $"Prompty {update.Version} is available.", true);
+            new UpdateWindow(update, _settings) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(UpdateStatus, "Couldn't check for updates: " + ex.Message, false);
+        }
+        finally { CheckUpdatesButton.IsEnabled = true; }
     }
 
     void CopyCommand_Click(object sender, RoutedEventArgs e) => Clipboard.SetText(CommandBox.Text);

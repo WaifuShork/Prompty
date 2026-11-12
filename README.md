@@ -68,6 +68,20 @@ Or click **⚙ Settings → Register now**. Restart any Claude Code sessions tha
 2. Type a short request in the **GENERATE** box ("add a dark mode toggle to settings") and press Enter.
 3. Edit the generated prompt, then press **Send to Claude** (Ctrl+Enter). It's typed into that session.
 
+### Updating
+
+Prompty checks GitHub for a new release when it starts. When one is out, it shows what's new and offers three choices:
+
+- **Update now**: downloads the new `Prompty.exe` and checks its SHA-256 against the release's published checksum. It
+  then replaces the exe in place and restarts into the new version, with your drafts and settings saved. If the
+  download fails or doesn't match the checksum, nothing is changed.
+- **Skip this version**: no prompt again until the next release.
+- **Don't ask again until X.0**: no prompts until the next major version.
+
+**⚙ Settings → Check for updates** checks at any time, and clears an earlier skip or pause. You can also turn off the
+check at launch there. Updating in place needs write access to the folder Prompty.exe is in, so keep it somewhere
+you own, such as `%LOCALAPPDATA%\Programs\Prompty`, rather than `Program Files`.
+
 ### Where Prompty keeps things
 
 | Path | Contents |
@@ -152,6 +166,10 @@ dotnet run --project src/Prompty          # run a debug build
 
 It is compressed and ReadyToRun-compiled. It isn't trimmed, because WPF doesn't support trimming. The settings are in
 `src/Prompty/Properties/PublishProfiles/SingleFile.pubxml`.
+
+To test the updater against a local feed instead of GitHub, set `PROMPTY_UPDATE_FEED` to a URL that returns a
+GitHub-style "latest release" JSON. A development build (`dotnet run` or `bin\Debug`) offers the download page
+instead of replacing itself.
 
 ---
 

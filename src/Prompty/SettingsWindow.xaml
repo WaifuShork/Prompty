@@ -85,6 +85,14 @@
             <TextBox Grid.Row="2" Grid.Column="1" x:Name="DelayBox" Margin="0,4" />
         </Grid>
 
+        <TextBlock Text="UPDATES" Style="{StaticResource PanelHeader}" />
+        <DockPanel Margin="0,0,0,4">
+            <Button DockPanel.Dock="Right" x:Name="CheckUpdatesButton" Content="Check for updates" Click="CheckUpdates_Click" />
+            <TextBlock x:Name="VersionText" VerticalAlignment="Center" />
+        </DockPanel>
+        <CheckBox x:Name="CheckOnLaunchBox" Content="Check for updates when Prompty starts" Margin="0,2,0,2" />
+        <TextBlock x:Name="UpdateStatus" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,16" />
+
         <TextBlock Text="CLAUDE CONNECTION (MCP)" Style="{StaticResource PanelHeader}" />
         <Grid Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
