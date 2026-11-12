@@ -114,7 +114,8 @@ foreach ($g in $groups.Keys) {
 }
 # build, ci, chore and test commits are left out of the notes but still count toward a patch release.
 
-$text = Get-Content $changelog -Raw
+# .NET reads UTF-8 by default; Windows PowerShell 5.1s Get-Content would read it as ANSI and mangle it.
+$text = [IO.File]::ReadAllText($changelog)
 # Notes run from the line after the heading up to the next "## [" heading or link reference at the START of
 # a line. Anchoring to line starts stops the match from swallowing the previous release's section.
 $unreleasedRx = '(?ms)^## \[Unreleased\][ \t]*\r?\n(?<notes>.*?)(?=^## \[|^\[[^\]]+\]: |\z)'
@@ -134,7 +135,10 @@ Write-Host "`n## [$version] - $date`n`n$body" -ForegroundColor Gray
 if ($DryRun) { Write-Host "`nDry run: nothing changed." -ForegroundColor Yellow; return }
 
 # -- write, commit, tag --
-$proj = Get-Content $csproj -Raw
+# Guard against encoding damage: UTF-8 read as ANSI turns e.g. an ellipsis into "a-circumflex, euro".
+$mojibake = [string][char]0x00E2 + [char]0x20AC
+if ($newText.Contains($mojibake) -and -not $text.Contains($mojibake)) { throw 'CHANGELOG.md text was garbled while editing (encoding problem); nothing written.' }
+$proj = [IO.File]::ReadAllText($csproj)
 $proj = [regex]::Replace($proj, '<Version>[^<]*</Version>', "<Version>$version</Version>")
 [IO.File]::WriteAllText($csproj, $proj)
 [IO.File]::WriteAllText($changelog, ($newText -replace "`r?`n", "`r`n"))
