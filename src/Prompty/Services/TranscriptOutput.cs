@@ -27,6 +27,7 @@ public static partial class ClaudeSessions
         public long Position;
         public string? Cwd;
         public readonly List<TEntry> Entries = [];
+        public readonly TaskTracker Tasks = new();
     }
 
     static readonly Dictionary<string, TranscriptState> Transcripts = new(StringComparer.OrdinalIgnoreCase);
@@ -52,6 +53,9 @@ public static partial class ClaudeSessions
                 {
                     st.Position = 0;
                     st.Entries.Clear();
+                    st.Tasks.Ordered.Clear();
+                    st.Tasks.ByToolUse.Clear();
+                    st.Tasks.StopCalls.Clear();
                 }
                 var skipPartialLine = false;
                 if (st.Position == 0 && length > InitialTailBytes)
@@ -73,7 +77,9 @@ public static partial class ClaudeSessions
                             var nl = Array.IndexOf(buf, (byte)'\n', start);
                             var line = Encoding.UTF8.GetString(buf, start, nl - start).TrimEnd('\r');
                             start = nl + 1;
-                            if (line.Length > 0 && ParseEntry(line, st) is { } entry) st.Entries.Add(entry);
+                            if (line.Length == 0) continue;
+                            ScanForTasks(line, st);
+                            if (ParseEntry(line, st) is { } entry) st.Entries.Add(entry);
                         }
                         st.Position += end + 1;
                     }

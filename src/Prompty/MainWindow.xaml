@@ -11,6 +11,25 @@
         Background="{StaticResource PanelBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- A flat, full-width clickable row for the task list (no accent fill when "checked"). -->
+        <Style x:Key="TaskRowToggle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4" Padding="6,3">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1AFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -189,13 +208,44 @@
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="2">
+                            <!-- Shells, monitors, agents and workflows Claude has running (or just finished), like the Claude Code
+                                 terminal's task list. Each row expands to the command and its live output. Hidden when empty. -->
+                            <Border x:Name="TasksPanel" Visibility="{Binding HasTasks, Converter={StaticResource BoolToVis}}"
+                                    Background="{StaticResource EditorBrush}" BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0" Padding="10,4,12,4">
+                                <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl x:Name="TasksList" ItemsSource="{Binding Tasks}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <ToggleButton IsChecked="{Binding IsExpanded}" Style="{StaticResource TaskRowToggle}"
+                                                                  AutomationProperties.Name="{Binding Title}" ToolTip="{Binding Command}">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Margin="12,0,0,0"
+                                                                       FontFamily="Cascadia Mono, Consolas" FontSize="12" Foreground="{StaticResource MutedText}" />
+                                                            <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12.5" TextTrimming="CharacterEllipsis">
+                                                                <Run Text="{Binding Chevron, Mode=OneWay}" Foreground="{StaticResource MutedText}" /><Run Text=" ● " Foreground="{Binding StatusBrush, Mode=OneWay}" /><Run Text="{Binding KindLabel, Mode=OneWay}" Foreground="{StaticResource MutedText}" /><Run Text="  " /><Run Text="{Binding Title, Mode=OneWay}" Foreground="#D4D4D8" />
+                                                            </TextBlock>
+                                                        </DockPanel>
+                                                    </ToggleButton>
+                                                    <TextBox Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}" Text="{Binding OutputText, Mode=OneWay}"
+                                                             IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MaxHeight="220"
+                                                             FontFamily="Cascadia Mono, Consolas" FontSize="12" Foreground="#C8CAD0" Background="#101114"
+                                                             BorderThickness="0" Padding="10,6" Margin="22,1,0,6" TextChanged="TaskOutput_TextChanged" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
                             <!-- Like Claude Code's status line: "✻ Sketching… (12s · ↓ 1.2k tokens)" -->
-                            <Border Grid.Row="2" x:Name="ActivityBar" Visibility="Collapsed" Background="{StaticResource EditorBrush}"
+                            <Border x:Name="ActivityBar" Visibility="Collapsed" Background="{StaticResource EditorBrush}"
                                     BorderBrush="#26FFFFFF" BorderThickness="0,1,0,0" Padding="16,5,16,6">
                                 <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="13" TextTrimming="CharacterEllipsis">
                                     <Run x:Name="ActivityGlyph" /><Run x:Name="ActivityVerb" /><Run x:Name="ActivityStats" Foreground="{StaticResource MutedText}" />
                                 </TextBlock>
                             </Border>
+                            </StackPanel>
                             <DockPanel Margin="4,6,4,6">
                                 <CheckBox DockPanel.Dock="Right" Content="Auto-scroll" IsChecked="{Binding AutoScroll}" FontSize="12" Margin="10,0,0,0" />
                                 <Button DockPanel.Dock="Right" Content="Collapse all" Style="{StaticResource SmallButton}" Margin="6,0,0,0" Click="CollapseAll_Click"

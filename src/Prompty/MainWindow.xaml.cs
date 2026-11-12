@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         _analyzeTimer.Tick += (_, _) => { _analyzeTimer.Stop(); if (_vm.AutoAnalyze) _ = AnalyzeAsync(auto: true); };
         _contextTimer.Tick += async (_, _) => { _contextTimer.Stop(); await RefreshContextAsync(); };
         _autosaveTimer.Tick += (_, _) => { _autosaveTimer.Stop(); SaveDraft(); };
+        _tasksTimer.Tick += async (_, _) => await RefreshTasksAsync();
 
         SetupEditor();
         Loaded += OnLoaded;
@@ -224,18 +225,91 @@ public partial class MainWindow : Window
             _vm.OutputHeader = "No session selected";
             ShowOutput(null, RenderedOutput.FromText(""));
             UpdateActivity(null, null);
+            _ = RefreshTasksAsync();
             return;
         }
         var (snapshot, rendered, activity) = await Task.Run(() => (ClaudeSessions.Load(session),
             ClaudeSessions.RenderOutput(session.FilePath), ClaudeSessions.GetTurnActivity(session.FilePath)));
         if (_vm.SelectedSession?.SessionId != session.SessionId) return; // selection moved on meanwhile
         UpdateActivity(session, activity);
+        _ = RefreshTasksAsync();
 
         _projectDir = snapshot.Cwd;
         _vm.Digest = snapshot.ToDigest(_settings.ContextMaxChars);
         _vm.TurnInfo = $"{snapshot.Turns.Count} turns";
         _vm.OutputHeader = $"{session.Title}  ·  {session.Detail}";
         ShowOutput(session.SessionId, rendered.Text.Length > 0 ? rendered : RenderedOutput.FromText("(No messages in this session yet.)\n"));
+    }
+
+    // ───────────────────────────── task list (shells, monitors, agents) ─────────────────────────────
+
+    readonly DispatcherTimer _tasksTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    readonly Dictionary<string, TaskItemVm> _taskVms = [];
+    string? _tasksSessionId;
+    bool _tasksRefreshing;
+
+    /// <summary>
+    /// Re-reads the selected session's tasks off the UI thread and updates the list in place, so expanded rows
+    /// stay expanded. Shown: everything still running (foreground shells only while Claude is working), plus
+    /// the last few that finished during the current turn (kept for 30 s once Claude goes idle).
+    /// </summary>
+    async Task RefreshTasksAsync()
+    {
+        if (_tasksRefreshing) return;
+        var session = _vm.SelectedSession;
+        if (session?.SessionId != _tasksSessionId)
+        {
+            _tasksSessionId = session?.SessionId;
+            _taskVms.Clear();
+            _vm.Tasks.Clear();
+        }
+        if (session is not { IsLive: true })
+        {
+            _vm.Tasks.Clear();
+            _vm.HasTasks = false;
+            _tasksTimer.Stop();
+            return;
+        }
+
+        _tasksRefreshing = true;
+        List<ClaudeTaskView> all;
+        try { all = await Task.Run(() => ClaudeSessions.GetTasks(session.FilePath, session.SessionId)); }
+        catch (Exception ex) { Debug.WriteLine($"Task refresh failed: {ex}"); return; }
+        finally { _tasksRefreshing = false; }
+        if (_vm.SelectedSession?.SessionId != session.SessionId) return;
+
+        var busy = _vm.SelectedSession?.IsBusy == true || _activityBusy;
+        var turnStart = _activity?.Start ?? DateTime.MinValue;
+        var now = DateTime.Now;
+        var running = all.Where(t => t.Status == ClaudeTaskStatus.Running
+                                     && (t.Kind != ClaudeTaskKind.Shell || busy)); // an idle session's pending shell was interrupted
+        var finished = all.Where(t => t.Status != ClaudeTaskStatus.Running && t.EndedAt is { } end
+                                      && end >= turnStart && (busy || now - end < TimeSpan.FromSeconds(30)))
+                          .TakeLast(6);
+        var visible = running.Concat(finished).DistinctBy(t => t.Id).OrderBy(t => t.StartedAt).ToList();
+
+        var keep = visible.Select(t => t.Id).ToHashSet();
+        for (var i = _vm.Tasks.Count - 1; i >= 0; i--)
+            if (!keep.Contains(_vm.Tasks[i].Id)) { _taskVms.Remove(_vm.Tasks[i].Id); _vm.Tasks.RemoveAt(i); }
+        for (var i = 0; i < visible.Count; i++)
+        {
+            if (!_taskVms.TryGetValue(visible[i].Id, out var vm)) _taskVms[visible[i].Id] = vm = new TaskItemVm(visible[i].Id);
+            vm.Update(visible[i]);
+            var at = _vm.Tasks.IndexOf(vm);
+            if (at < 0) _vm.Tasks.Insert(i, vm);
+            else if (at != i) _vm.Tasks.Move(at, i);
+        }
+        _vm.HasTasks = _vm.Tasks.Count > 0;
+
+        // Poll once a second while anything runs or Claude is working; transcript changes also trigger a refresh.
+        if (busy || _vm.Tasks.Any(t => t.IsRunning)) { if (!_tasksTimer.IsEnabled) _tasksTimer.Start(); }
+        else _tasksTimer.Stop();
+    }
+
+    /// <summary>Keep a live task's expanded output scrolled to the newest line, like a terminal.</summary>
+    void TaskOutput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: TaskItemVm { OutputIsLive: true } } box) box.ScrollToEnd();
     }
 
     // ───────────────────────────── activity status line ─────────────────────────────
