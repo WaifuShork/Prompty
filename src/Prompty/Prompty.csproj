@@ -8,6 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Prompty</RootNamespace>
     <AssemblyName>Prompty</AssemblyName>
+    <!-- Icon of Prompty.exe (Explorer, taskbar, Start, Alt+Tab). -->
+    <ApplicationIcon>Resources\prompty_icon.ico</ApplicationIcon>
     <Version>1.2.0</Version>
   </PropertyGroup>
 
@@ -30,6 +32,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\Markdown.xshd" />
     <EmbeddedResource Include="Resources\Output.xshd" />
+    <!-- Also a WPF resource, for the window title bars. -->
+    <Resource Include="Resources\prompty_icon.ico" />
   </ItemGroup>
 
 </Project>

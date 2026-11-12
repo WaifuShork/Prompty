@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
         ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="/Resources/prompty_icon.ico"
         Title="Prompty settings" Width="680" SizeToContent="Height" MaxHeight="980" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="{StaticResource PanelBrush}">
     <ScrollViewer VerticalScrollBarVisibility="Auto">

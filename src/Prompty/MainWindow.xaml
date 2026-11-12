@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:Prompty"
         xmlns:svc="clr-namespace:Prompty.Services"
         ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="/Resources/prompty_icon.ico" ui:TitleBar.IsIconVisible="True"
         Title="Prompty" Width="1500" Height="940" MinWidth="1040" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource PanelBrush}">

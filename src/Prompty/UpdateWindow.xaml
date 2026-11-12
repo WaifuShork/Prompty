@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
         ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="/Resources/prompty_icon.ico"
         Title="Prompty update" Width="620" Height="520" ResizeMode="CanResizeWithGrip" MinHeight="360" MinWidth="480"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="{StaticResource PanelBrush}">
     <Grid Margin="20">
