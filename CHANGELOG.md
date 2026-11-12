@@ -15,6 +15,18 @@ under *Unreleased* are carried into the next release.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
+### Added
+
+- **editor:** Paste or drop images into the prompt at any spot ([6533904](https://github.com/WaifuShork/Prompty/commit/6533904))
+- **output:** Show Claude's running shells, monitors and agents ([2f104d0](https://github.com/WaifuShork/Prompty/commit/2f104d0))
+- **providers:** Sign in with ChatGPT to use your Plus/Pro plan ([dc62c02](https://github.com/WaifuShork/Prompty/commit/dc62c02))
+
+### Fixed
+
+- **chatgpt:** Explain rejected sign-ins and the Plus/Pro requirement ([b0f69fa](https://github.com/WaifuShork/Prompty/commit/b0f69fa))
+
 ## [1.1.0] - 2026-11-11
 
 ### Added
@@ -60,6 +72,7 @@ The first release.
 - **MCP server** built into the app (`share_context`, `wait_for_prompt`, `get_draft`, `seed_draft`, and the `send` prompt), with one-click registration in Claude Code.
 - **Single-file release build**: one self-contained `Prompty.exe` that runs without .NET installed, made by `build.ps1`, plus a GitHub Actions workflow that builds every push and publishes tagged releases.
 
-[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/WaifuShork/Prompty/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/WaifuShork/Prompty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/WaifuShork/Prompty/releases/tag/v1.0.0
