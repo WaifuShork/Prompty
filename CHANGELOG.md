@@ -15,6 +15,16 @@ under *Unreleased* are carried into the next release.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-11
+
+### Added
+
+- **updater:** Check GitHub Releases and update in place ([87d5276](https://github.com/WaifuShork/Prompty/commit/87d5276))
+
+### Fixed
+
+- **release:** Read CHANGELOG and csproj as UTF-8 ([fcb6464](https://github.com/WaifuShork/Prompty/commit/fcb6464))
+
 ## [1.0.0] - 2026-11-11
 
 The first release.
@@ -50,5 +60,6 @@ The first release.
 - **MCP server** built into the app (`share_context`, `wait_for_prompt`, `get_draft`, `seed_draft`, and the `send` prompt), with one-click registration in Claude Code.
 - **Single-file release build**: one self-contained `Prompty.exe` that runs without .NET installed, made by `build.ps1`, plus a GitHub Actions workflow that builds every push and publishes tagged releases.
 
-[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/WaifuShork/Prompty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/WaifuShork/Prompty/releases/tag/v1.0.0
