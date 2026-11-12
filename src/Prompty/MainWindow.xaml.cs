@@ -450,6 +450,7 @@ public partial class MainWindow : Window
     async Task CheckModelAsync()
     {
         var provider = _settings.ProviderInfo;
+        _vm.UsingChatGptPlan = provider.UsesAccountSignIn;
         if (provider.IsCloud)
         {
             await CheckCloudAsync(provider);
@@ -486,7 +487,7 @@ public partial class MainWindow : Window
                 RemoveSetupCards();
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or PlanLimitException or TaskCanceledException or System.Text.Json.JsonException)
         {
             _vm.ModelOk = false;
             _vm.ModelStatus = $"{_settings.ProviderInfo.Name} not reachable at {_settings.BaseUrl}";
@@ -501,7 +502,36 @@ public partial class MainWindow : Window
     async Task CheckCloudAsync(ProviderInfo provider)
     {
         var name = provider.Name;
-        if (CredentialStore.Get(provider) == null)
+        if (provider.UsesAccountSignIn)
+        {
+            var account = ChatGptAuth.Account;
+            if (account == null)
+            {
+                _vm.ModelOk = false;
+                _vm.ModelStatus = "☁ ChatGPT plan: not signed in";
+                ShowSetupCard("Prompty is set to use your ChatGPT plan but isn't signed in. Open ⚙ Settings and click Continue with ChatGPT.",
+                    "", "Sign in needed");
+                return;
+            }
+            if (!account.HasPlanUsage)
+            {
+                _vm.ModelOk = false;
+                _vm.ModelStatus = "☁ ChatGPT plan: plan usage not available";
+                ShowSetupCard($"You're signed in as {account.Email}, but this sign-in doesn't allow using your ChatGPT plan in other apps. " +
+                              "Pick an API key provider in ⚙ Settings instead.", "", "Plan usage unavailable");
+                return;
+            }
+            if (LocalModelClient.PlanLimitPaused)
+            {
+                _vm.ModelOk = false;
+                _vm.ModelStatus = "☁ ChatGPT plan: usage limit reached";
+                ShowSetupCard("You've reached your ChatGPT plan's usage limit, so Prompty paused its model requests. " +
+                              "Check your usage below; when it has reset, open ⚙ Settings and click Test & load models to resume.",
+                    ChatGptAuth.ManageUsageUrl, "Usage limit reached");
+                return;
+            }
+        }
+        else if (CredentialStore.Get(provider) == null)
         {
             _vm.ModelOk = false;
             _vm.ModelStatus = $"☁ {name}: not signed in";
@@ -528,7 +558,9 @@ public partial class MainWindow : Window
             _vm.ModelOk = true;
             // Some APIs (Azure deployments, OpenRouter variants) accept names their list doesn't show.
             var listed = models.Count == 0 || models.Contains(_settings.Model);
-            _vm.ModelStatus = $"☁ {name} ● {_settings.Model}{(listed ? "" : " (not in the provider's list)")}";
+            _vm.ModelStatus = provider.UsesAccountSignIn
+                ? $"☁ ChatGPT ({ChatGptAuth.Account?.Email}) ● {_settings.Model}{(listed ? "" : " (not in your plan's list)")}"
+                : $"☁ {name} ● {_settings.Model}{(listed ? "" : " (not in the provider's list)")}";
             _setupShownFor = null;
             RemoveSetupCards();
         }
@@ -540,6 +572,9 @@ public partial class MainWindow : Window
                           "Check the key and URL in ⚙ Settings. Prompty retries automatically.", "", "Connection problem");
         }
     }
+
+    void ManageUsage_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo(ChatGptAuth.ManageUsageUrl) { UseShellExecute = true });
 
     string? _setupShownFor;
 
@@ -678,7 +713,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _vm.Activity = "Analysis failed: " + ex.Message;
-            if (!auto || ex is HttpRequestException) await CheckModelAsync();
+            if (!auto || ex is HttpRequestException or PlanLimitException) await CheckModelAsync();
         }
         finally
         {
@@ -708,7 +743,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             card.Error = ex.Message;
-            if (ex is HttpRequestException) _ = CheckModelAsync();
+            if (ex is HttpRequestException or PlanLimitException) _ = CheckModelAsync();
         }
         finally
         {
@@ -841,7 +876,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _vm.Activity = "Generation failed: " + ex.Message;
-            if (ex is HttpRequestException) _ = CheckModelAsync();
+            if (ex is HttpRequestException or PlanLimitException) _ = CheckModelAsync();
         }
         finally
         {

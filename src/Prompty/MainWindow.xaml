@@ -37,6 +37,11 @@
                               ToolTip="Re-analyze a few seconds after you stop typing" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12"
+                               Visibility="{Binding UsingChatGptPlan, Converter={StaticResource BoolToVis}}"
+                               ToolTip="Model calls use your ChatGPT plan's usage instead of API billing">
+                        <Run Text="Using ChatGPT plan" Foreground="{StaticResource AccentText}" /><Run Text="  ·  " Foreground="{StaticResource MutedText}" /><Hyperlink Click="ManageUsage_Click" Foreground="LightSkyBlue">Manage usage</Hyperlink>
+                    </TextBlock>
                     <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,6,0">
                         <Ellipse.Style>
                             <Style TargetType="Ellipse">

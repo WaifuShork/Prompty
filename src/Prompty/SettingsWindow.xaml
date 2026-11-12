@@ -46,7 +46,11 @@
             <StackPanel Grid.Row="4" Grid.Column="1" x:Name="SignInPanel" Orientation="Horizontal" Margin="0,2,0,4">
                 <Button x:Name="SignInButton" Content="Sign in with OpenRouter" Style="{StaticResource AccentButtonStyle}" Click="SignIn_Click"
                         ToolTip="Opens your browser; approve Prompty and a key is created for you" />
-                <TextBlock Text="or paste a key above" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12" Foreground="{StaticResource MutedText}" />
+                <Button x:Name="SignOutButton" Content="Sign out" Margin="8,0,0,0" Click="SignOut_Click"
+                        ToolTip="Revoke Prompty's access with OpenAI and forget this account" />
+                <Button x:Name="ManageUsageButton" Content="Manage usage ↗" Margin="8,0,0,0" Click="ManageUsage_Click"
+                        ToolTip="See and limit how much of your ChatGPT plan Prompty can use" />
+                <TextBlock x:Name="SignInHint" Text="or paste a key above" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12" Foreground="{StaticResource MutedText}" />
             </StackPanel>
             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="KeyStatus" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4" />
 

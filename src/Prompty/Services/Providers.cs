@@ -1,9 +1,11 @@
 namespace Prompty.Services;
 
-public enum ApiKind { Ollama, OpenAi, Anthropic }
+/// <summary>OpenAiResponses: OpenAI's Responses API, which "Sign in with ChatGPT" plan usage requires.</summary>
+public enum ApiKind { Ollama, OpenAi, Anthropic, OpenAiResponses }
 
 /// <summary>How the API key is sent.</summary>
-public enum AuthStyle { Bearer, AzureApiKey, AnthropicKey }
+/// <summary>How requests are authorized. ChatGptAccount: an OAuth access token from Sign in with ChatGPT.</summary>
+public enum AuthStyle { Bearer, AzureApiKey, AnthropicKey, ChatGptAccount }
 
 /// <summary>
 /// A model platform Prompty can talk to. Most cloud platforms speak the OpenAI chat-completions protocol;
@@ -25,7 +27,8 @@ public sealed record ProviderInfo(
     string? Note = null)
 {
     public string Display => IsCloud ? $"☁  {Name}" : $"⌂  {Name}";
-    public bool NeedsKey => IsCloud;
+    public bool NeedsKey => IsCloud && Auth != AuthStyle.ChatGptAccount;
+    public bool UsesAccountSignIn => Auth == AuthStyle.ChatGptAccount;
     public override string ToString() => Display;
 }
 
@@ -42,7 +45,11 @@ public static class Providers
         new("anthropic", "Anthropic (Claude)", ApiKind.Anthropic, "https://api.anthropic.com", true,
             "claude-haiku-5-5", "claude-sonnet-5-5", "https://console.anthropic.com/settings/keys", ["ANTHROPIC_API_KEY"],
             AuthStyle.AnthropicKey),
-        new("openai", "OpenAI", ApiKind.OpenAi, "https://api.openai.com/v1", true,
+        new("chatgpt", "ChatGPT plan (Sign in with ChatGPT)", ApiKind.OpenAiResponses, "https://api.openai.com/v1", true,
+            "", "", Auth: AuthStyle.ChatGptAccount, SupportsSignIn: true,
+            Note: "Uses your ChatGPT Plus or Pro plan instead of API billing (OpenAI's official Sign in with ChatGPT). " +
+                  "On Plus, the 5-hour usage limit is shared with ChatGPT and your other apps."),
+        new("openai", "OpenAI (API key)", ApiKind.OpenAi, "https://api.openai.com/v1", true,
             "gpt-5-mini", "gpt-5", "https://platform.openai.com/api-keys", ["OPENAI_API_KEY"]),
         new("gemini", "Google Gemini", ApiKind.OpenAi, "https://generativelanguage.googleapis.com/v1beta/openai", true,
             "gemini-2.5-flash", "gemini-2.5-pro", "https://aistudio.google.com/apikey", ["GEMINI_API_KEY", "GOOGLE_API_KEY"]),

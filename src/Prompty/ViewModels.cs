@@ -20,6 +20,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string _modelName = "";
     [ObservableProperty] private string _modelStatus = "Checking local model…";
+    /// <summary>Shows the "Using ChatGPT plan · Manage usage" indicator next to the model picker.</summary>
+    [ObservableProperty] private bool _usingChatGptPlan;
     [ObservableProperty] private bool _modelOk;
     [ObservableProperty] private bool _autoAnalyze = true;
     [ObservableProperty] private int _busyCount;

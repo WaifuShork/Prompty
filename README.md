@@ -133,6 +133,7 @@ For LM Studio, llama.cpp or vLLM, choose **⚙ → Local OpenAI-compatible serve
 
 | Provider | Connect with |
 |---|---|
+| **ChatGPT plan** | **Continue with ChatGPT**: sign in with your ChatGPT account through OpenAI's official [Sign in with ChatGPT](https://developers.openai.com/siwc), and Prompty uses your **Plus or Pro plan** instead of API billing. Calls count against your plan's limits. On Plus, the 5-hour limit is shared with ChatGPT and other apps. The toolbar shows *Using ChatGPT plan · Manage usage*. If you reach a limit, Prompty pauses rather than switching to paid billing. |
 | **OpenRouter** | **Sign in with OpenRouter**: approve in the browser and a key is created for you (OAuth PKCE). Hundreds of models from every major lab. |
 | Anthropic (Claude), OpenAI, Google Gemini, Mistral, Groq, DeepSeek, xAI (Grok), Together AI, Fireworks AI, Cerebras, Hugging Face | An API key |
 | Azure OpenAI | An API key. Put your resource in the URL and use deployment names as the models. |
@@ -142,6 +143,12 @@ For LM Studio, llama.cpp or vLLM, choose **⚙ → Local OpenAI-compatible serve
 - **Test & load models** checks the key and loads the provider's real model list. Each provider remembers its own URL and models.
 - If a model rejects an optional setting (temperature on reasoning models, JSON mode), Prompty drops it and retries.
 - **Privacy:** with a cloud provider, the conversation digest, your draft and the project overview (for GENERATE) are sent to that service and billed to your account. Settings says so whenever a cloud provider is selected.
+
+**Why there's no "sign in with Claude" or "sign in with Google":** Anthropic doesn't allow third-party apps to use
+Claude Free/Pro/Max subscription logins; those are only for Claude Code and claude.ai. Google likewise prohibits reusing Gemini CLI's
+Google-account login in other tools, and has suspended accounts that did. Prompty therefore connects to Claude and Gemini
+with API keys, or through OpenRouter. ChatGPT is the one major platform with an official way for apps to use a
+subscription.
 
 ---
 

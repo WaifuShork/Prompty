@@ -23,6 +23,13 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
     string OpenAiBase => Provider.Id == "openai-local" && !Base.EndsWith("/v1") ? Base + "/v1" : Base;
     string? ApiKey => apiKeyOverride ?? CredentialStore.Get(Provider);
 
+    /// <summary>
+    /// Set when the ChatGPT plan's usage limit is hit. OpenAI asks apps to stop sending plan requests
+    /// (and not guess a reset time) until the user acts, so this stays set until <see cref="ResumePlanUsage"/>.
+    /// </summary>
+    public static bool PlanLimitPaused { get; private set; }
+    public static void ResumePlanUsage() => PlanLimitPaused = false;
+
     // Fields a model rejected once; not sent again for that model.
     readonly HashSet<string> _dropped = [];
 
@@ -37,15 +44,21 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
             _ => $"{OpenAiBase}/models",
         };
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        AddAuth(req);
+        await AddAuthAsync(req, cts.Token);
         using var resp = await Http.SendAsync(req, cts.Token);
         var text = await resp.Content.ReadAsStringAsync(cts.Token);
-        if (!resp.IsSuccessStatusCode) throw new LocalModelException(DescribeError(text, (int)resp.StatusCode, null));
+        if (!resp.IsSuccessStatusCode) throw ErrorFor(text, (int)resp.StatusCode, null);
         await ValidateKeyAsync(cts.Token);
         var json = JsonNode.Parse(text);
-        var names = Provider.Api == ApiKind.Ollama
-            ? json?["models"]?.AsArray().Select(m => m?["name"]?.GetValue<string>())
-            : json?["data"]?.AsArray().Select(m => m?["id"]?.GetValue<string>());
+        var names = Provider.Api switch
+        {
+            ApiKind.Ollama => json?["models"]?.AsArray().Select(m => m?["name"]?.GetValue<string>()),
+            // Sign in with ChatGPT lists {"models":[{"slug","display_name","visibility"}]}; show visibility == "list".
+            ApiKind.OpenAiResponses when json?["models"] is JsonArray models => models
+                .Where(m => m?["visibility"]?.GetValue<string>() is null or "list")
+                .Select(m => m?["slug"]?.GetValue<string>() ?? m?["id"]?.GetValue<string>()),
+            _ => json?["data"]?.AsArray().Select(m => m?["id"]?.GetValue<string>()),
+        };
         return names?.Where(s => !string.IsNullOrEmpty(s))
             .Select(s => s!.StartsWith("models/") ? s[7..] : s!) // Gemini lists "models/gemini-…"
             .Distinct().OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList() ?? [];
@@ -64,10 +77,9 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
         };
         if (url == null) return;
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        AddAuth(req);
+        await AddAuthAsync(req, ct);
         using var resp = await Http.SendAsync(req, ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new LocalModelException(DescribeError(await resp.Content.ReadAsStringAsync(ct), (int)resp.StatusCode, null));
+        if (!resp.IsSuccessStatusCode) throw ErrorFor(await resp.Content.ReadAsStringAsync(ct), (int)resp.StatusCode, null);
     }
 
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, bool json, CancellationToken ct)
@@ -88,11 +100,24 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
             throw new LocalModelException($"No model selected for {Provider.Name}. Pick one in ⚙ Settings.");
         if (Provider.NeedsKey && string.IsNullOrEmpty(ApiKey))
             throw new LocalModelException($"Not signed in to {Provider.Name}. Open ⚙ Settings to sign in or paste an API key.");
+        if (Provider.UsesAccountSignIn)
+        {
+            var account = ChatGptAuth.Account
+                ?? throw new LocalModelException("Not signed in with ChatGPT. Open ⚙ Settings and click Continue with ChatGPT.");
+            if (PlanLimitPaused)
+                throw new PlanLimitException("Paused: your ChatGPT plan's usage limit was reached. Check " +
+                                             $"{ChatGptAuth.ManageUsageUrl}, then click Test in ⚙ Settings to resume.");
+            // Signing in alone doesn't authorize plan usage; the grant must include the plan scope.
+            if (!account.HasPlanUsage)
+                throw new LocalModelException("Your ChatGPT sign-in doesn't include plan usage for this account, so Prompty can't use your plan. " +
+                                              "Use an API key provider instead (⚙ Settings).");
+        }
 
         var stream = Provider.Api switch
         {
             ApiKind.Ollama => StreamOllamaAsync(messages, json, model, contextTokens ?? settings.ContextTokens, ct),
             ApiKind.Anthropic => StreamAnthropicAsync(messages, model, ct),
+            ApiKind.OpenAiResponses => StreamResponsesAsync(messages, json, model, ct),
             _ => StreamOpenAiAsync(messages, json, model, ct),
         };
 
@@ -131,8 +156,14 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
         return 0;
     }
 
-    void AddAuth(HttpRequestMessage req)
+    async Task AddAuthAsync(HttpRequestMessage req, CancellationToken ct)
     {
+        if (Provider.Auth == AuthStyle.ChatGptAccount)
+        {
+            try { req.Headers.Authorization = new("Bearer", await ChatGptAuth.GetAccessTokenAsync(ct)); }
+            catch (ChatGptAuthException ex) { throw new LocalModelException(ex.Message); }
+            return;
+        }
         var key = ApiKey;
         switch (Provider.Auth)
         {
@@ -166,7 +197,7 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
             {
                 Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
             };
-            AddAuth(req);
+            await AddAuthAsync(req, ct);
             var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if (resp.IsSuccessStatusCode) return resp;
 
@@ -176,7 +207,7 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
             var culprit = status is 400 or 422
                 ? optional.FirstOrDefault(o => body.ContainsKey(o.Field) && err.Contains(o.ErrorWord, StringComparison.OrdinalIgnoreCase))
                 : default;
-            if (culprit.Field == null) throw new LocalModelException(DescribeError(err, status, model));
+            if (culprit.Field == null) throw ErrorFor(err, status, model);
             _dropped.Add($"{model}|{culprit.Field}");
         }
     }
@@ -241,6 +272,66 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
         }
     }
 
+    /// <summary>
+    /// OpenAI Responses API, as required for Sign in with ChatGPT plan usage: store=false and stream=true on
+    /// every request, instructions instead of system messages, no temperature. Only a response.completed
+    /// event counts as success.
+    /// </summary>
+    async IAsyncEnumerable<string> StreamResponsesAsync(
+        IReadOnlyList<LlmMessage> messages, bool json, string model, [EnumeratorCancellation] CancellationToken ct)
+    {
+        var instructions = string.Join("\n\n", messages.Where(m => m.Role == "system").Select(m => m.Content));
+        var input = new JsonArray(messages.Where(m => m.Role != "system").Select(m => (JsonNode)new JsonObject
+        {
+            ["type"] = "message",
+            ["role"] = m.Role == "assistant" ? "assistant" : "user",
+            ["content"] = new JsonArray(new JsonObject
+            {
+                ["type"] = m.Role == "assistant" ? "output_text" : "input_text",
+                ["text"] = m.Content,
+            }),
+        }).ToArray());
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["input"] = input,
+            ["stream"] = true,
+            ["store"] = false,
+        };
+        if (instructions.Length > 0) body["instructions"] = instructions;
+        if (json) body["text"] = new JsonObject { ["format"] = new JsonObject { ["type"] = "json_object" } };
+
+        using var resp = await SendAsync($"{Base}/responses", model, body, [("text", "format")], ct);
+        using var reader = new StreamReader(await resp.Content.ReadAsStreamAsync(ct));
+        var completed = false;
+        string? line;
+        while ((line = await reader.ReadLineAsync(ct)) != null)
+        {
+            if (!line.StartsWith("data:")) continue;
+            var data = line[5..].Trim();
+            if (data.Length == 0 || data == "[DONE]") continue;
+            var node = JsonNode.Parse(data);
+            switch (node?["type"]?.GetValue<string>())
+            {
+                case "response.output_text.delta":
+                    if (node["delta"]?.GetValue<string>() is { Length: > 0 } delta) yield return delta;
+                    break;
+                case "response.completed":
+                    completed = true;
+                    break;
+                case "response.incomplete":
+                    var reason = node["response"]?["incomplete_details"]?["reason"]?.ToString() ?? "unknown reason";
+                    throw new LocalModelException($"The response was cut short ({reason}).");
+                case "response.failed":
+                    throw ErrorFromNode(node["response"]?["error"], 0, model);
+                case "error":
+                    throw ErrorFromNode(node["error"] ?? node, 0, model);
+            }
+            if (completed) yield break;
+        }
+        if (!completed) throw new LocalModelException("The connection closed before the response finished. Try again.");
+    }
+
     async IAsyncEnumerable<string> StreamAnthropicAsync(
         IReadOnlyList<LlmMessage> messages, string model, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -277,6 +368,39 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
         }
     }
 
+    /// <summary>Turns an error response into an exception; Sign in with ChatGPT plan errors are keyed by error.code.</summary>
+    Exception ErrorFor(string body, int status, string? model)
+    {
+        JsonNode? error = null;
+        try { error = (JsonNode.Parse(body) as JsonObject)?["error"]; } catch (JsonException) { }
+        return error is JsonObject ? ErrorFromNode(error, status, model) : new LocalModelException(DescribeError(body, status, model));
+    }
+
+    Exception ErrorFromNode(JsonNode? error, int status, string? model)
+    {
+        var code = (error as JsonObject)?["code"]?.ToString();
+        var message = (error as JsonObject)?["message"]?.ToString() ?? error?.ToString() ?? "unknown error";
+        return code switch
+        {
+            "subscription_sharing_usage_limit_exceeded" => PausePlan(), _ => null,
+        } ?? code switch
+        {
+            "subscription_sharing_usage_limit_exceeded" => new PlanLimitException(
+                "You've reached your ChatGPT plan's usage limit. Prompty has paused model requests; check your usage at " +
+                $"{ChatGptAuth.ManageUsageUrl}, then click Test in ⚙ Settings to resume."),
+            "subscription_sharing_usage_unavailable" => new LocalModelException("ChatGPT plan usage is temporarily unavailable. Try again in a little while."),
+            "subscription_sharing_user_not_eligible" => new LocalModelException(
+                "This ChatGPT account isn't eligible to use its plan in other apps (Plus or Pro is required). Use an API key provider instead."),
+            "subscription_sharing_invalid_user" => new LocalModelException("ChatGPT didn't accept this sign-in. Sign in again in ⚙ Settings."),
+            "subscription_sharing_route_not_supported" => new LocalModelException($"ChatGPT plan usage doesn't support this request: {message}"),
+            "subscription_sharing_unsupported_capability" => new LocalModelException($"ChatGPT plan usage doesn't support part of this request: {message}"),
+            _ when status > 0 => new LocalModelException(DescribeError(new JsonObject { ["error"] = error?.DeepClone() }.ToJsonString(), status, model)),
+            _ => new LocalModelException($"{Provider.Name}: {message}"),
+        };
+    }
+
+    static Exception? PausePlan() { PlanLimitPaused = true; return null; }
+
     string DescribeError(string body, int status, string? model)
     {
         var detail = ExtractMessage(body);
@@ -312,4 +436,7 @@ public sealed partial class LocalModelClient(AppSettings settings, string? apiKe
     private static partial Regex ThinkRegex();
 }
 
-public sealed class LocalModelException(string message) : Exception(message);
+public class LocalModelException(string message) : Exception(message);
+
+/// <summary>The ChatGPT plan's usage limit was hit: pause plan requests until the user resumes.</summary>
+public sealed class PlanLimitException(string message) : LocalModelException(message);

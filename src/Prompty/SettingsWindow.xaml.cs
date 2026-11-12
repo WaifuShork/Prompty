@@ -79,9 +79,19 @@ public partial class SettingsWindow : Window
         // Local OpenAI-compatible servers sometimes want a key too, so keep the field available there.
         if (p.Id == "openai-local") KeyLabel.Visibility = KeyPanel.Visibility = KeyStatus.Visibility = Visibility.Visible;
         SignInPanel.Visibility = p.SupportsSignIn ? Visibility.Visible : Visibility.Collapsed;
+        // Account sign-in (ChatGPT plan) has no API key at all.
+        if (p.UsesAccountSignIn) { KeyLabel.Text = "Account"; KeyPanel.Visibility = Visibility.Collapsed; }
+        else KeyLabel.Text = "API key";
+        SignInHint.Visibility = p.UsesAccountSignIn ? Visibility.Collapsed : Visibility.Visible;
+        ManageUsageButton.Visibility = p.UsesAccountSignIn ? Visibility.Visible : Visibility.Collapsed;
+        SignInButton.Content = SignInLabel(p);
         GetKeyButton.Visibility = p.KeyUrl != null ? Visibility.Visible : Visibility.Collapsed;
         CtxLabel.Visibility = CtxBox.Visibility = p.Api == ApiKind.Ollama ? Visibility.Visible : Visibility.Collapsed;
-        PrivacyNote.Text = p.IsCloud
+        PrivacyNote.Text = p.UsesAccountSignIn
+            ? "With your ChatGPT plan, the Claude conversation digest, your draft and (for GENERATE) the project overview " +
+              "(README, CLAUDE.md and file list) are sent to OpenAI, and the calls count against your plan's usage limits " +
+              "(on Plus, the 5-hour limit is shared with ChatGPT and your other apps). It isn't billed as API usage."
+            : p.IsCloud
             ? $"With {p.Name}, the Claude conversation digest, your draft and (for GENERATE) the project overview " +
               "(README, CLAUDE.md and file list) are sent to that service, and usage is billed to your account."
             : "";
@@ -92,10 +102,25 @@ public partial class SettingsWindow : Window
     string? EffectiveKey(ProviderInfo p) =>
         _pendingKeys.TryGetValue(p.Id, out var pending) ? pending : CredentialStore.Get(p);
 
+    static string SignInLabel(ProviderInfo p) => p.UsesAccountSignIn ? "Continue with ChatGPT" : $"Sign in with {p.Name}";
+
     void UpdateKeyStatus()
     {
         var p = _shown;
         ForgetKeyButton.IsEnabled = false;
+        if (p.UsesAccountSignIn)
+        {
+            var account = ChatGptAuth.Account;
+            SignOutButton.Visibility = account != null ? Visibility.Visible : Visibility.Collapsed;
+            SignInButton.Visibility = account == null ? Visibility.Visible : Visibility.Collapsed;
+            if (account == null) SetStatus(KeyStatus, "Not signed in. Uses OpenAI's official Sign in with ChatGPT; no API key needed.", false);
+            else if (!account.HasPlanUsage)
+                SetStatus(KeyStatus, $"Signed in as {account.Email}, but this account's sign-in doesn't allow using its plan in other apps.", false);
+            else SetStatus(KeyStatus, $"✓ Signed in as {account.Email} · Using ChatGPT plan", true);
+            return;
+        }
+        SignOutButton.Visibility = Visibility.Collapsed;
+        SignInButton.Visibility = Visibility.Visible;
         if (_pendingKeys.TryGetValue(p.Id, out var pending))
         {
             SetStatus(KeyStatus, pending == null ? "Key will be removed when you save." : $"New key {CredentialStore.Mask(pending)}: saved when you click Save.",
@@ -144,10 +169,29 @@ public partial class SettingsWindow : Window
         UpdateKeyStatus();
     }
 
+    void ManageUsage_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo(ChatGptAuth.ManageUsageUrl) { UseShellExecute = true });
+
+    async void SignOut_Click(object sender, RoutedEventArgs e)
+    {
+        SignOutButton.IsEnabled = false;
+        var revoked = await ChatGptAuth.SignOutAsync();
+        SignOutButton.IsEnabled = true;
+        UpdateKeyStatus();
+        if (!revoked)
+            SetStatus(KeyStatus, "Signed out on this PC, but OpenAI couldn't be reached to revoke access. " +
+                                 "You can also disconnect Prompty in ChatGPT settings.", false);
+    }
+
     async void SignIn_Click(object sender, RoutedEventArgs e)
     {
         if (_signInCts != null) { _signInCts.Cancel(); return; }
         var provider = _shown;
+        if (provider.UsesAccountSignIn)
+        {
+            await SignInChatGptAsync();
+            return;
+        }
         using var cts = _signInCts = new CancellationTokenSource();
         SignInButton.Content = "Cancel sign-in";
         SetStatus(KeyStatus, "Waiting for you to approve Prompty in the browser…", null);
@@ -163,7 +207,38 @@ public partial class SettingsWindow : Window
         finally
         {
             _signInCts = null;
-            SignInButton.Content = "Sign in with OpenRouter";
+            SignInButton.Content = SignInLabel(provider);
+        }
+    }
+
+    /// <summary>One-time confirmation, then OpenAI's browser sign-in. Loads the plan's models on success.</summary>
+    async Task SignInChatGptAsync()
+    {
+        var first = MessageBox.Show(this,
+            "Prompty will use your ChatGPT plan for its model calls: analysis, suggestions, rewrites and the prompt generator.\n\n" +
+            "• These calls count against your plan's usage limits. On Plus, the 5-hour limit is shared with ChatGPT and your other apps.\n" +
+            "• They aren't billed as API usage. When you reach a limit, Prompty pauses; it never switches to paid billing on its own.\n" +
+            "• You can see or cap Prompty's share any time in ChatGPT settings → Usage, and sign out here.\n\n" +
+            "Continue to sign in with ChatGPT in your browser?",
+            "Use your ChatGPT plan in Prompty", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+        if (first != MessageBoxResult.OK) return;
+
+        using var cts = _signInCts = new CancellationTokenSource();
+        SignInButton.Content = "Cancel sign-in";
+        SetStatus(KeyStatus, "Waiting for you to sign in with ChatGPT in the browser…", null);
+        try
+        {
+            var account = await ChatGptAuth.SignInAsync(cts.Token);
+            LocalModelClient.ResumePlanUsage();
+            UpdateKeyStatus();
+            if (account.HasPlanUsage) Test_Click(this, new RoutedEventArgs()); // load the plan's models
+        }
+        catch (OperationCanceledException ex) { SetStatus(KeyStatus, ex.Message.Contains("cancelled") ? ex.Message : "Sign-in cancelled.", false); }
+        catch (Exception ex) { SetStatus(KeyStatus, ex.Message, false); }
+        finally
+        {
+            _signInCts = null;
+            SignInButton.Content = SignInLabel(_shown);
         }
     }
 
@@ -175,9 +250,9 @@ public partial class SettingsWindow : Window
         var provider = _shown;
         var probe = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(_work))!;
         var key = EffectiveKey(provider);
-        if (provider.IsCloud && string.IsNullOrEmpty(key))
+        if (provider.UsesAccountSignIn ? !ChatGptAuth.IsSignedIn : provider.IsCloud && string.IsNullOrEmpty(key))
         {
-            SetStatus(TestResult, "Sign in or paste an API key first.", false);
+            SetStatus(TestResult, provider.UsesAccountSignIn ? "Click Continue with ChatGPT first." : "Sign in or paste an API key first.", false);
             return;
         }
         TestButton.IsEnabled = false;
@@ -185,6 +260,7 @@ public partial class SettingsWindow : Window
         try
         {
             var models = await new LocalModelClient(probe, key ?? "").ListModelsAsync();
+            if (provider.UsesAccountSignIn) LocalModelClient.ResumePlanUsage(); // an explicit test resumes after a usage-limit pause
             if (_shown != provider) return;
             ModelBox.ItemsSource = models;
             GeneratorModelBox.ItemsSource = models;
@@ -218,7 +294,8 @@ public partial class SettingsWindow : Window
         _settings.Provider = _work.Provider;
         _settings.BaseUrl = _work.BaseUrl;
         _settings.Model = _work.Model;
-        if (_work.GeneratorModel.Length > 0) _settings.GeneratorModel = _work.GeneratorModel;
+        // No generator model picked: use the main model rather than keeping another provider's choice.
+        _settings.GeneratorModel = _work.GeneratorModel.Length > 0 ? _work.GeneratorModel : _work.Model;
         _settings.Profiles = _work.Profiles;
         _settings.Profiles[_work.Provider] = new ProviderProfile(_work.BaseUrl, _work.Model, _settings.GeneratorModel);
         if (int.TryParse(CtxBox.Text, out var ctx) && ctx >= 2048) _settings.ContextTokens = ctx;

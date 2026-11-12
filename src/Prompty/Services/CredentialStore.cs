@@ -27,6 +27,9 @@ public static class CredentialStore
 
     public static string? Get(ProviderInfo provider) => Resolve(provider).Key;
 
+    /// <summary>Any stored secret by its own key (e.g. the ChatGPT sign-in record).</summary>
+    public static string? GetRaw(string key) => Load().TryGetValue(key, out var v) && v.Length > 0 ? v : null;
+
     public static void Set(string providerId, string? key)
     {
         lock (Gate)
