@@ -15,6 +15,13 @@ under *Unreleased* are carried into the next release.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-23
+
+### Added
+
+- **output:** Answer Claude's clarifying questions from Prompty ([1585d73](https://github.com/WaifuShork/Prompty/commit/1585d73))
+- **ui:** Add the Prompty app icon ([7cc16e3](https://github.com/WaifuShork/Prompty/commit/7cc16e3))
+
 ## [1.2.0] - 2026-11-12
 
 ### Added
@@ -72,7 +79,8 @@ The first release.
 - **MCP server** built into the app (`share_context`, `wait_for_prompt`, `get_draft`, `seed_draft`, and the `send` prompt), with one-click registration in Claude Code.
 - **Single-file release build**: one self-contained `Prompty.exe` that runs without .NET installed, made by `build.ps1`, plus a GitHub Actions workflow that builds every push and publishes tagged releases.
 
-[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/WaifuShork/Prompty/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/WaifuShork/Prompty/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/WaifuShork/Prompty/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/WaifuShork/Prompty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/WaifuShork/Prompty/releases/tag/v1.0.0
