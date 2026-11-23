@@ -87,6 +87,141 @@ public static class ConsoleInjector
         }
     }
 
+    /// <summary>Runs <paramref name="work"/> while attached to Claude Code's console (input and screen).</summary>
+    static T WithConsole<T>(int pid, Func<SafeFileHandle, SafeFileHandle, T> work)
+    {
+        lock (Gate)
+        {
+            FreeConsole();
+            if (!AttachConsole((uint)pid))
+                throw new InvalidOperationException(
+                    $"Couldn't attach to Claude Code's console (pid {pid}): {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
+            SetConsoleCtrlHandler(IntPtr.Zero, true);
+            try
+            {
+                using var input = CreateFileW("CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                using var output = CreateFileW("CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+                if (input.IsInvalid || output.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Couldn't open Claude Code's console");
+                return work(input, output);
+            }
+            finally
+            {
+                SetConsoleCtrlHandler(IntPtr.Zero, false);
+                FreeConsole();
+            }
+        }
+    }
+
+    /// <summary>The visible text of a Claude Code session's console (read-only).</summary>
+    public static string ReadScreen(int pid) => WithConsole(pid, (_, output) => ReadScreen(output));
+
+    /// <summary>
+    /// Answers the question Claude Code's question widget is showing, using the same keys a user would
+    /// (confirmed against Claude Code 2.1.330):
+    /// <list type="bullet">
+    /// <item>single-select: the option's number picks it and moves on; for a typed answer, the "Type something"
+    ///   number focuses its text field, then the text and Enter;</item>
+    /// <item>multi-select: numbers toggle boxes (the cursor doesn't move); a typed answer is entered on the
+    ///   "Type something" row; then the cursor goes to the Submit row and Enter.</item>
+    /// </list>
+    /// The screen is re-read first and must still show <paramref name="expected"/>'s question, so keys can never land
+    /// in the normal prompt box or on a different question.
+    /// </summary>
+    public static void AnswerQuestion(int pid, QuestionScreen expected, QuestionAnswer answer) => WithConsole(pid, (input, output) =>
+    {
+        var now = QuestionScreen.Parse(ReadScreen(output));
+        if (now is not { IsReview: false } || now.Question != expected.Question)
+            throw new InvalidOperationException("Claude Code is no longer showing this question, so nothing was sent.");
+
+        var typeRow = now.TypeRow!;
+        if (!now.MultiSelect)
+        {
+            if (answer.Custom is { Length: > 0 } custom)
+            {
+                Type(input, typeRow.Number.ToString());
+                Thread.Sleep(250);
+                ClearTyped(input, typeRow);
+                Type(input, OneLine(custom));
+                Thread.Sleep(150);
+                Press(input, VK_RETURN, '\r');
+            }
+            else Type(input, answer.Selected[0].ToString());
+            return true;
+        }
+
+        foreach (var row in now.Options)
+            if (answer.Selected.Contains(row.Number) != row.Checked) { Type(input, row.Number.ToString()); Thread.Sleep(120); }
+        var cursor = Math.Max(0, now.CursorIndex);
+        var rows = now.Rows.ToList();
+        if (answer.Custom is { Length: > 0 } text)
+        {
+            cursor = MoveTo(input, cursor, rows.IndexOf(typeRow));
+            Thread.Sleep(150);
+            ClearTyped(input, typeRow);
+            Type(input, OneLine(text)); // typing ticks the row
+            Thread.Sleep(150);
+        }
+        else if (typeRow.Checked) { Type(input, typeRow.Number.ToString()); Thread.Sleep(120); } // untick a stale typed answer
+        var submit = rows.FindIndex(r => r.Kind == QuestionRowKind.Submit);
+        if (submit < 0) throw new InvalidOperationException("Couldn't find the question's Submit row. Finish answering in the terminal.");
+        MoveTo(input, cursor, submit);
+        Thread.Sleep(150);
+        Press(input, VK_RETURN, '\r');
+        return true;
+    });
+
+    /// <summary>On the "Review your answers" step: 1 submits, 2 cancels. Checks the step is showing first.</summary>
+    public static void ReviewAction(int pid, bool submit) => WithConsole(pid, (input, output) =>
+    {
+        if (QuestionScreen.Parse(ReadScreen(output)) is not { IsReview: true })
+            throw new InvalidOperationException("Claude Code isn't showing the review step any more, so nothing was sent.");
+        Type(input, submit ? "1" : "2");
+        return true;
+    });
+
+    static int MoveTo(SafeFileHandle input, int from, int to)
+    {
+        for (var i = from; i < to; i++) Press(input, VK_DOWN, '\0');
+        for (var i = from; i > to; i--) Press(input, VK_UP, '\0');
+        return to;
+    }
+
+    /// <summary>Erases text already typed into the free-text row (it shows instead of "Type something").</summary>
+    static void ClearTyped(SafeFileHandle input, QuestionRow typeRow)
+    {
+        var label = typeRow.Label.TrimEnd('.');
+        if (label is "Type something" or "") return;
+        for (var i = 0; i < typeRow.Label.Length; i++) Press(input, VK_BACK, '\b');
+    }
+
+    static string OneLine(string s) => s.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ').Trim();
+
+    static void Type(SafeFileHandle input, string text)
+    {
+        var records = new List<INPUT_RECORD>();
+        AddText(records, text);
+        Write(input, records);
+    }
+
+    static void Press(SafeFileHandle input, ushort vk, char ch) => Write(input, [Key(ch, vk, true), Key(ch, vk, false)]);
+
+    /// <summary>The console's visible text (the window, not the scrollback).</summary>
+    static string ReadScreen(SafeFileHandle output)
+    {
+        if (!GetConsoleScreenBufferInfo(output, out var info)) return "";
+        var sb = new System.Text.StringBuilder();
+        int width = info.dwSize.X;
+        var buf = new char[width];
+        for (var y = info.srWindow.Top; y <= info.srWindow.Bottom; y++)
+        {
+            if (ReadConsoleOutputCharacterW(output, buf, (uint)width, new COORD { X = 0, Y = y }, out var read))
+                sb.Append(buf, 0, (int)read).Append('\n');
+        }
+        return sb.ToString();
+    }
+
     static void AddText(List<INPUT_RECORD> records, string s)
     {
         foreach (var ch in s)
@@ -129,7 +264,7 @@ public static class ConsoleInjector
         KeyEvent = new KEY_EVENT_RECORD { bKeyDown = down ? 1 : 0, wRepeatCount = 1, wVirtualKeyCode = vk, UnicodeChar = ch },
     };
 
-    const ushort KEY_EVENT = 1, VK_RETURN = 0x0D, VK_ESCAPE = 0x1B;
+    const ushort KEY_EVENT = 1, VK_RETURN = 0x0D, VK_ESCAPE = 0x1B, VK_DOWN = 0x28, VK_UP = 0x26, VK_BACK = 0x08;
     const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;
 
     [StructLayout(LayoutKind.Explicit, CharSet = CharSet.Unicode)]
@@ -151,6 +286,14 @@ public static class ConsoleInjector
     }
 
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool AttachConsole(uint pid);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetConsoleScreenBufferInfo(SafeFileHandle h, out CONSOLE_SCREEN_BUFFER_INFO info);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool ReadConsoleOutputCharacterW(SafeFileHandle h, [Out] char[] buffer, uint length, COORD at, out uint read);
+
+    [StructLayout(LayoutKind.Sequential)] struct COORD { public short X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct SMALL_RECT { public short Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct CONSOLE_SCREEN_BUFFER_INFO { public COORD dwSize, dwCursorPosition; public ushort wAttributes; public SMALL_RECT srWindow; public COORD dwMaximumWindowSize; }
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool FreeConsole();
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
 

@@ -14,6 +14,8 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<string> Models { get; } = [];
     /// <summary>Shells, monitors, agents and workflows Claude is running (or just finished) in the selected session.</summary>
     public ObservableCollection<TaskItemVm> Tasks { get; } = [];
+    /// <summary>Questions Claude asked (AskUserQuestion) in the selected session and is waiting on; null when none.</summary>
+    [ObservableProperty] private QuestionCardVm? _questionCard;
     [ObservableProperty] private bool _hasTasks;
 
     [ObservableProperty] private SessionInfo? _selectedSession;
@@ -169,6 +171,126 @@ public sealed partial class TaskItemVm(string id) : ObservableObject
         if (t.TotalMinutes >= 1) return $"{(int)t.TotalMinutes}m {t.Seconds}s";
         return t.TotalSeconds < 10 ? $"{t.TotalSeconds:0.0}s" : $"{(int)t.TotalSeconds}s";
     }
+}
+
+/// <summary>
+/// The "Claude is asking" card. Mirrors the step Claude Code's question widget is on, read from its screen:
+/// one question at a time, then the review step.
+/// </summary>
+public sealed partial class QuestionCardVm : ObservableObject
+{
+    public QuestionCardVm(QuestionScreen screen, string sessionTitle)
+    {
+        Screen = screen;
+        SessionTitle = sessionTitle;
+        if (!screen.IsReview) Question = new QuestionVm(screen, Recompute);
+        Recompute();
+    }
+
+    public QuestionScreen Screen { get; }
+    public string Key => Screen.Key;
+    public string SessionTitle { get; }
+    public bool IsReview => Screen.IsReview;
+    public bool IsQuestion => !Screen.IsReview;
+    public QuestionVm? Question { get; }
+    public string Heading => IsReview ? "Review your answers" : "Claude is asking";
+    public string SendLabel => IsReview ? "Submit answers ➤" : "Answer ➤";
+
+    /// <summary>"Color ✓ · Toppings": the widget's tabs, ticked once answered.</summary>
+    public string Progress => Screen.Tabs.Count <= 1 ? "" :
+        string.Join("  ·  ", Screen.Tabs.Select(t => t.Answered ? $"{t.Title} ✓" : t.Title));
+    public bool HasProgress => Progress.Length > 0;
+    public IReadOnlyList<string> ReviewLines => Screen.Review.Select(r => $"{r.Question}  →  {r.Answer}").ToList();
+
+    [ObservableProperty] private bool _canSend;
+    [ObservableProperty] private bool _isSending;
+    [ObservableProperty] private string _status = "";
+    [ObservableProperty] private bool _statusIsError;
+
+    partial void OnIsSendingChanged(bool value) => Recompute();
+
+    public void Recompute() => CanSend = !IsSending && (IsReview || Question?.IsAnswered == true);
+}
+
+public sealed partial class QuestionVm : ObservableObject
+{
+    readonly Action _changed;
+    bool _syncing;
+
+    public QuestionVm(QuestionScreen screen, Action changed)
+    {
+        _changed = changed;
+        Text = screen.Question;
+        MultiSelect = screen.MultiSelect;
+        foreach (var o in screen.Options)
+            Options.Add(new QuestionOptionVm(o.Number, o.Label, o.Description, OnOptionChanged) { IsSelected = screen.MultiSelect && o.Checked });
+        // Text already typed into Claude Code's free-text row shows there instead of "Type something".
+        if (screen.TypeRow is { } t && t.Label.TrimEnd('.') is var typed && typed is not ("Type something" or ""))
+        {
+            _customText = typed;
+            _useCustom = !screen.MultiSelect || t.Checked;
+        }
+    }
+
+    public string Text { get; }
+    public bool MultiSelect { get; }
+    public bool SingleSelect => !MultiSelect;
+    public string Hint => MultiSelect ? "Choose any that apply" : "Choose one";
+    public string GroupName { get; } = "q" + Guid.NewGuid().ToString("N");
+    public ObservableCollection<QuestionOptionVm> Options { get; } = [];
+    // Only one kind of control is created per question: hidden radio buttons would still enforce their group's
+    // one-checked rule through the shared bindings and untick multi-select answers.
+    public IEnumerable<QuestionOptionVm>? SingleOptions => MultiSelect ? null : Options;
+    public IEnumerable<QuestionOptionVm>? MultiOptions => MultiSelect ? Options : null;
+
+    [ObservableProperty] private bool _useCustom;
+    [ObservableProperty] private string _customText = "";
+
+    public bool IsAnswered => Options.Any(o => o.IsSelected) || (UseCustom && CustomText.Trim().Length > 0);
+
+    void OnOptionChanged(QuestionOptionVm option)
+    {
+        if (_syncing) return;
+        _syncing = true;
+        if (!MultiSelect && option.IsSelected)
+        {
+            foreach (var o in Options) if (o != option) o.IsSelected = false;
+            UseCustom = false;
+        }
+        _syncing = false;
+        _changed?.Invoke();
+    }
+
+    partial void OnUseCustomChanged(bool value)
+    {
+        if (!_syncing && value && !MultiSelect)
+        {
+            _syncing = true;
+            foreach (var o in Options) o.IsSelected = false;
+            _syncing = false;
+        }
+        _changed?.Invoke();
+    }
+
+    partial void OnCustomTextChanged(string value)
+    {
+        if (value.Trim().Length > 0 && !UseCustom) UseCustom = true; // typing an answer picks "Other"
+        _changed?.Invoke();
+    }
+
+    public QuestionAnswer ToAnswer() => new(
+        UseCustom && !MultiSelect ? [] : Options.Where(o => o.IsSelected).Select(o => o.Number).ToList(),
+        UseCustom && CustomText.Trim().Length > 0 ? CustomText.Trim() : null);
+}
+
+public sealed partial class QuestionOptionVm(int number, string label, string description, Action<QuestionOptionVm> changed) : ObservableObject
+{
+    public int Number { get; } = number;
+    public string Label { get; } = label;
+    public string Description { get; } = description;
+    public bool HasDescription => Description.Length > 0 && Description != Label;
+    [ObservableProperty] private bool _isSelected;
+    partial void OnIsSelectedChanged(bool value) => changed(this);
 }
 
 public enum SuggestionKind { Section, Selection, Insert, Placeholders, ReplaceAll, Info }

@@ -193,13 +193,140 @@
                     <RowDefinition Height="360" MinHeight="190" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Background="#3A2E22" BorderBrush="{StaticResource AccentText}" BorderThickness="0,0,0,1" Padding="14,10"
+                <StackPanel Grid.Row="0">
+                <Border Background="#3A2E22" BorderBrush="{StaticResource AccentText}" BorderThickness="0,0,0,1" Padding="14,10"
                         Visibility="{Binding ClaudeWaiting, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
                         <TextBlock Text="Claude is waiting for your prompt (wait_for_prompt)" FontWeight="SemiBold" Foreground="{StaticResource AccentText}" />
                         <TextBlock Text="{Binding WaitingText}" TextWrapping="Wrap" FontSize="12" Margin="0,2,12,0" />
                     </StackPanel>
                 </Border>
+
+                <!-- Claude's clarifying questions (AskUserQuestion): answer here instead of in the terminal. -->
+                <Border x:Name="QuestionCard" DataContext="{Binding QuestionCard}" Margin="8,8,8,0" CornerRadius="8"
+                        Background="#2A241E" BorderBrush="{StaticResource AccentText}" BorderThickness="1" Padding="14,10,14,12">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding SessionTitle}" Foreground="{StaticResource MutedText}" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource AccentText}">
+                                    <Run Text="?  " /><Run Text="{Binding Heading, Mode=OneWay}" />
+                                </TextBlock>
+                                <TextBlock Text="{Binding Progress}" FontSize="11.5" Foreground="{StaticResource MutedText}" Margin="0,2,0,0"
+                                           Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </DockPanel>
+                        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
+                            <Button DockPanel.Dock="Left" x:Name="SendAnswersButton" Content="{Binding SendLabel}" Style="{StaticResource AccentButtonStyle}"
+                                    IsEnabled="{Binding CanSend}" Click="SendAnswers_Click"
+                                    ToolTip="Answer in Claude Code for you, as if you'd picked these in the terminal" />
+                            <Button DockPanel.Dock="Left" Content="Answer in terminal" Margin="8,0,0,0" Click="DismissQuestions_Click"
+                                    ToolTip="Hide this card; you can still answer in the Claude Code window" />
+                            <TextBlock DockPanel.Dock="Left" Text="{Binding Status}" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
+                                       TextWrapping="Wrap" MaxWidth="420">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedText}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource Bad}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DockPanel>
+                        <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <Grid>
+                                <!-- Review step: the answers Claude Code is about to send. -->
+                                <ItemsControl ItemsSource="{Binding ReviewLines}" Visibility="{Binding IsReview, Converter={StaticResource BoolToVis}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="13" Margin="0,2" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <!-- Question step: the question Claude Code is showing right now. -->
+                                <StackPanel DataContext="{Binding Question}" Visibility="{Binding DataContext.IsQuestion, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13.5" Margin="0,0,0,2" />
+                                    <TextBlock Text="{Binding Hint}" FontSize="11" Foreground="{StaticResource MutedText}" Margin="0,0,0,4" />
+                                    <!-- Single-select: radio buttons (one group per question). -->
+                                    <ItemsControl ItemsSource="{Binding SingleOptions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <RadioButton Margin="0,1" GroupName="{Binding DataContext.GroupName, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                             IsChecked="{Binding IsSelected}" AutomationProperties.AutomationId="QuestionOption"
+                                                             AutomationProperties.Name="{Binding Label}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}" FontSize="13" />
+                                                        <TextBlock Text="{Binding Description}" FontSize="11.5" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"
+                                                                   Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}" />
+                                                    </StackPanel>
+                                                </RadioButton>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <!-- Multi-select: check boxes. -->
+                                    <ItemsControl ItemsSource="{Binding MultiOptions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Margin="0,1" IsChecked="{Binding IsSelected}" AutomationProperties.AutomationId="QuestionOption"
+                                                          AutomationProperties.Name="{Binding Label}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Label}" FontSize="13" />
+                                                        <TextBlock Text="{Binding Description}" FontSize="11.5" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"
+                                                                   Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}" />
+                                                    </StackPanel>
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <DockPanel Margin="0,2,0,0">
+                                        <ContentControl DockPanel.Dock="Left" VerticalAlignment="Center" Content="{Binding}" Focusable="False">
+                                            <ContentControl.Style>
+                                                <Style TargetType="ContentControl">
+                                                    <Setter Property="ContentTemplate">
+                                                        <Setter.Value>
+                                                            <DataTemplate>
+                                                                <RadioButton GroupName="{Binding GroupName}" IsChecked="{Binding UseCustom}" Content="Other:"
+                                                                             AutomationProperties.AutomationId="QuestionOther" />
+                                                            </DataTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding MultiSelect}" Value="True">
+                                                            <Setter Property="ContentTemplate">
+                                                                <Setter.Value>
+                                                                    <DataTemplate>
+                                                                        <CheckBox IsChecked="{Binding UseCustom}" Content="Other:" AutomationProperties.AutomationId="QuestionOther" />
+                                                                    </DataTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ContentControl.Style>
+                                        </ContentControl>
+                                        <TextBox Text="{Binding CustomText, UpdateSourceTrigger=PropertyChanged}" Margin="4,0,0,0"
+                                                 AutomationProperties.AutomationId="QuestionOtherText" AutomationProperties.Name="Other answer"
+                                                 ui:ControlHelper.PlaceholderText="Type your own answer" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+                </StackPanel>
 
                 <TabControl Grid.Row="1" x:Name="CenterTabs" Margin="8,6,8,0" Background="Transparent" ui:TabControlHelper.IsAddTabButtonVisible="False">
                     <TabItem x:Name="OutputTab" Header="Claude output" ui:TabItemHelper.IsClosable="False">

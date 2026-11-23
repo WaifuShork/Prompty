@@ -272,6 +272,7 @@ public partial class MainWindow : Window
         }
         if (session is not { IsLive: true })
         {
+            _vm.QuestionCard = null;
             _vm.Tasks.Clear();
             _vm.HasTasks = false;
             _tasksTimer.Stop();
@@ -280,10 +281,18 @@ public partial class MainWindow : Window
 
         _tasksRefreshing = true;
         List<ClaudeTaskView> all;
-        try { all = await Task.Run(() => ClaudeSessions.GetTasks(session.FilePath, session.SessionId)); }
+        QuestionScreen? question;
+        // Claude Code doesn't write a pending question to the transcript; while it waits for input, read its screen.
+        var watchScreen = session.Status == "waiting" || _vm.QuestionCard != null;
+        try
+        {
+            (all, question) = await Task.Run(() => (ClaudeSessions.GetTasks(session.FilePath, session.SessionId),
+                                                    watchScreen ? ReadQuestionScreen(session) : null));
+        }
         catch (Exception ex) { Debug.WriteLine($"Task refresh failed: {ex}"); return; }
         finally { _tasksRefreshing = false; }
         if (_vm.SelectedSession?.SessionId != session.SessionId) return;
+        ShowQuestions(session, question);
 
         var busy = _vm.SelectedSession?.IsBusy == true || _activityBusy;
         var turnStart = _activity?.Start ?? DateTime.MinValue;
@@ -309,9 +318,100 @@ public partial class MainWindow : Window
         _vm.HasTasks = _vm.Tasks.Count > 0;
 
         // Poll once a second while anything runs or Claude is working; transcript changes also trigger a refresh.
-        if (busy || _vm.Tasks.Any(t => t.IsRunning)) { if (!_tasksTimer.IsEnabled) _tasksTimer.Start(); }
+        if (busy || watchScreen || _vm.QuestionCard != null || _vm.Tasks.Any(t => t.IsRunning)) { if (!_tasksTimer.IsEnabled) _tasksTimer.Start(); }
         else _tasksTimer.Stop();
     }
+
+    // ───────────────────────────── Claude's questions (AskUserQuestion) ─────────────────────────────
+
+    readonly HashSet<string> _dismissedQuestions = [];
+
+    /// <summary>The question widget on the session's console, if it's showing one. Runs off the UI thread.</summary>
+    static QuestionScreen? ReadQuestionScreen(SessionInfo session)
+    {
+        if (session is not { Pid: int pid } || !ClaudeSessions.IsSameProcess(pid, session.ProcStart)) return null;
+        try { return QuestionScreen.Parse(ConsoleInjector.ReadScreen(pid)); }
+        catch (Exception ex) { Debug.WriteLine($"Reading Claude Code's screen failed: {ex.Message}"); return null; }
+    }
+
+    /// <summary>Shows the step Claude Code's question widget is on; keeps in-progress picks while the step is unchanged.</summary>
+    void ShowQuestions(SessionInfo session, QuestionScreen? screen)
+    {
+        if (screen == null) { _dismissedQuestions.Clear(); _vm.QuestionCard = null; return; }
+        if (_dismissedQuestions.Contains(screen.Key)) { _vm.QuestionCard = null; return; }
+        if (_vm.QuestionCard?.Key == screen.Key) return;
+        var first = _vm.QuestionCard == null;
+        _vm.QuestionCard = new QuestionCardVm(screen, $"{session.Title} · {session.Project}");
+        if (first)
+        {
+            _vm.Activity = "Claude is asking you something: answer in the card above the output";
+            if (!IsActive) FlashTaskbar();
+        }
+    }
+
+    async void SendAnswers_Click(object sender, RoutedEventArgs e)
+    {
+        var card = _vm.QuestionCard;
+        var session = _vm.SelectedSession;
+        if (card == null || !card.CanSend) return;
+        if (session is not { IsLive: true, Pid: int pid } || !ClaudeSessions.IsSameProcess(pid, session.ProcStart))
+        {
+            card.StatusIsError = true;
+            card.Status = "That Claude Code session isn't running any more.";
+            return;
+        }
+        card.IsSending = true;
+        card.StatusIsError = false;
+        card.Status = card.IsReview ? "Submitting…" : "Answering in Claude Code…";
+        try
+        {
+            if (card.IsReview) await Task.Run(() => ConsoleInjector.ReviewAction(pid, submit: true));
+            else
+            {
+                var answer = card.Question!.ToAnswer();
+                await Task.Run(() => ConsoleInjector.AnswerQuestion(pid, card.Screen, answer));
+            }
+            // Let Claude Code move on, then show its next step (next question, review, or nothing once done).
+            await Task.Delay(700);
+            await RefreshTasksAsync();
+            if (_vm.QuestionCard == card)
+            {
+                card.IsSending = false;
+                card.Status = "Sent, but Claude Code still shows this step. Check the terminal.";
+            }
+            else if (_vm.QuestionCard == null) _vm.Activity = "Answered Claude's questions ✓";
+        }
+        catch (Exception ex)
+        {
+            card.StatusIsError = true;
+            card.Status = ex.Message;
+            card.IsSending = false;
+        }
+    }
+
+    void DismissQuestions_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm.QuestionCard is { } card) _dismissedQuestions.Add(card.Key);
+        _vm.QuestionCard = null;
+    }
+
+    void FlashTaskbar()
+    {
+        var info = new FLASHWINFO
+        {
+            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<FLASHWINFO>(),
+            hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle,
+            dwFlags = 3 | 12, // FLASHW_ALL | FLASHW_TIMERNOFG: flash until the window comes to the front
+            uCount = 5,
+        };
+        FlashWindowEx(ref info);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool FlashWindowEx(ref FLASHWINFO info);
 
     /// <summary>Keep a live task's expanded output scrolled to the newest line, like a terminal.</summary>
     void TaskOutput_TextChanged(object sender, TextChangedEventArgs e)
